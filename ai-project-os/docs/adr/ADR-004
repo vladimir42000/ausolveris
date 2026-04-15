@@ -1,0 +1,44 @@
+# ADR-004: Stable documentation will use append-over-overwrite policy
+
+- Date: 2026-04-15
+- Status: accepted
+- Deciders: Director
+- Technical area: documentation
+
+## Context
+
+The project will evolve over many iterations, possibly with multiple AI agents and thread handovers. Silent overwriting of accepted documentation would destroy project memory, obscure why decisions were made, and make later audits difficult. The project therefore needs a policy that preserves history while still allowing evolution.
+
+ADR guidance explicitly recommends append-only treatment of accepted records and creating new records when decisions change instead of rewriting the original. [web:39][web:94]
+
+## Decision
+
+Stable project documents will follow an append-over-overwrite policy.
+
+Class A stable documents, including the constitution, role model, phase plan, physics foundations, and ADRs, must not be silently rewritten. If meaning changes, the project will add dated updates, addenda, or superseding records. Controlled living documents may evolve, but material changes must preserve traceability.
+
+## Consequences
+
+Benefits:
+- Preserves project memory.
+- Makes historical reasoning visible.
+- Improves handover quality.
+- Supports audits and later refactoring.
+
+Costs:
+- Documentation may become longer.
+- Stewardship effort increases.
+- Requires explicit supersession discipline.
+
+Trade-off:
+The project accepts more documentation maintenance in exchange for much stronger continuity across time and across AI agents.
+
+## Alternatives considered
+
+- Alternative 1: free editing of all documents.
+- Alternative 2: rely only on git history without explicit document-level policy.
+- Alternative 3: maintain only minimal docs and store rationale in chat.
+
+## Supersession
+
+None.

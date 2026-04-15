@@ -1,0 +1,43 @@
+# ADR-002: Use Python with git-first development and pytest-based validation
+
+- Date: 2026-04-15
+- Status: accepted
+- Deciders: Director
+- Technical area: toolchain
+
+## Context
+
+The project aims to build an open-source loudspeaker-oriented simulation platform with AI-assisted development. The workflow must support rapid experimentation, scientific computing, structured testing, and direct repository editing through coding agents. The project is budget-constrained and therefore must maximize productivity per unit cost.
+
+Pytest guidance recommends establishing a root `pyproject.toml` and isolated development environment early in the repository lifecycle. Aider also works best inside a git repository with reviewable commits and reversible changes. [web:35][web:44]
+
+## Decision
+
+The project will use Python as the primary implementation language, git as the mandatory source-control system, and pytest as the default test framework.
+
+The repository will adopt a root-level `pyproject.toml`. Development agents will work on git branches. Aider or similar repository-aware coding tools may be used by the Developer role, but only inside the approved repository workflow.
+
+## Consequences
+
+Benefits:
+- Python fits scientific and numerical prototyping well.
+- Git provides auditable and reversible change history.
+- Pytest supports repeatable regression control.
+- Aider integrates naturally with branch-based git workflows. [web:44][web:35]
+
+Costs:
+- Python may not be sufficient for all future performance-critical kernels.
+- Additional tooling decisions will still be required for packaging, CI, and optional acceleration.
+
+Trade-off:
+The project prioritizes fast, disciplined development first and defers low-level optimization decisions until profiling justifies them.
+
+## Alternatives considered
+
+- Alternative 1: C++ as the primary language from day one.
+- Alternative 2: Julia as the primary language.
+- Alternative 3: ad hoc scripts without formal packaging and test configuration.
+
+## Supersession
+
+None.

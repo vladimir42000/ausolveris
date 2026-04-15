@@ -1,0 +1,51 @@
+# ADR-003: Initial project scope will focus on controlled v1 definition before solver implementation
+
+- Date: 2026-04-15
+- Status: accepted
+- Deciders: Director
+- Technical area: product scope
+
+## Context
+
+The long-term ambition of the project is broad: an open-source YAML-based server-client modeling platform for loudspeaker simulation with LEM and BEM capabilities. However, beginning implementation before freezing a narrow v1 scope would increase drift, waste budget, and make AI task packets too ambiguous.
+
+ADR practice recommends separating phased decisions instead of collapsing short-term and long-term approaches into one record. [web:39]
+
+## Decision
+
+The project will not begin solver implementation until the v1 scope is explicitly defined in repository documents.
+
+The next planning focus will define:
+- target user problems,
+- v1 use cases,
+- v1 non-goals,
+- first benchmark cases,
+- first deliverables,
+- phase boundaries for early development.
+
+The likely initial domain is horn and waveguide related loudspeaker problems, but the exact v1 scope remains to be formalized in the next planning phase.
+
+## Consequences
+
+Benefits:
+- Prevents premature coding.
+- Improves task packet quality.
+- Keeps costs under control by reducing exploratory implementation churn.
+- Makes audits meaningful.
+
+Costs:
+- Delays coding start slightly.
+- Requires up-front planning effort.
+
+Trade-off:
+The project accepts a slower start in exchange for a cleaner and cheaper development trajectory.
+
+## Alternatives considered
+
+- Alternative 1: start coding a generic solver core immediately.
+- Alternative 2: prototype many unrelated solver directions in parallel.
+- Alternative 3: rely on evolving chat discussions instead of formal v1 definition.
+
+## Supersession
+
+None.

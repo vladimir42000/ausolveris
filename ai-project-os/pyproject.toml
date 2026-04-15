@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-loudspeaker-solver"
+version = "0.0.1"
+description = "Open-source YAML-driven loudspeaker modeling platform"
+readme = "README-HOWTO.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Project Contributors" }
+]
+dependencies = []
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+  "slow: slower-running tests",
+  "benchmark: benchmark and reference-comparison tests"
+]
