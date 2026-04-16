@@ -187,3 +187,50 @@ def test_yaml_validation_on_load():
     
     model = GeometryModel.from_dict(valid_data)
     assert model.parts["part1"].name == "Valid Part"
+
+def test_yaml_load_rejects_invalid_hierarchy():
+    """Test that YAML load rejects hierarchy structures with duplicate ids or cycles."""
+    # Data with duplicate part ids in hierarchy
+    duplicate_id_data = {
+        "name": "Duplicate ID Model",
+        "parts": {
+            "part1": {
+                "id": "part1",
+                "name": "Part 1",
+                "children": [
+                    {
+                        "id": "part2",
+                        "name": "Part 2",
+                        "children": [
+                            {
+                                "id": "part1",  # Same as top-level part
+                                "name": "Duplicate Part",
+                                "children": [],
+                                "anchors": {},
+                                "boundaries": {},
+                                "metadata": {}
+                            }
+                        ],
+                        "anchors": {},
+                        "boundaries": {},
+                        "metadata": {}
+                    }
+                ],
+                "anchors": {},
+                "boundaries": {},
+                "metadata": {}
+            }
+        },
+        "frames": {}
+    }
+    
+    with pytest.raises(ValueError, match='Duplicate part id "part1" found in hierarchy'):
+        GeometryModel.from_dict(duplicate_id_data)
+    
+    # Data that would create a direct self-cycle (a part containing itself)
+    # This is possible in YAML because we can reference the same part
+    # But our from_dict creates new objects, so it's not a true reference cycle
+    # However, we can create a structure where a part appears in its own descendant chain
+    # by having a child with the same id as an ancestor
+    # But that's caught by duplicate id check above
+    # So we rely on the object-level cycle test in test_model_validation.py

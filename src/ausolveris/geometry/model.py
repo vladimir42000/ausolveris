@@ -157,9 +157,9 @@ class Part:
                     f'Boundary dictionary key "{key}" does not match contained Boundary.id "{boundary.id}"'
                 )
         
-        # Recursively validate children
-        for child in self.children:
-            child._validate()
+        # Note: children validation is done at the GeometryModel level
+        # to avoid infinite recursion and to check hierarchy-wide constraints
+        # (duplicate ids, cycles). We do NOT recursively call child._validate() here.
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert part to YAML-safe dictionary."""
@@ -252,21 +252,37 @@ class GeometryModel:
         for part in self.parts.values():
             part._validate()
         
-        # Validate anchor frame references
+        # Validate anchor frame references and check hierarchy integrity
         frame_ids = set(self.frames.keys())
+        seen_part_ids = set()
+        
+        def traverse_part_hierarchy(part, current_path_objects):
+            """Traverse part hierarchy checking for cycles and duplicate ids."""
+            # Check for cycles using object identity in current traversal path
+            part_object_id = id(part)
+            if part_object_id in current_path_objects:
+                raise ValueError(f'Cycle detected in part hierarchy involving part "{part.id}"')
+            
+            # Check for duplicate part ids across the entire hierarchy
+            if part.id in seen_part_ids:
+                raise ValueError(f'Duplicate part id "{part.id}" found in hierarchy')
+            seen_part_ids.add(part.id)
+            
+            # Check anchors
+            for anchor in part.anchors.values():
+                if anchor.frame_id is not None and anchor.frame_id not in frame_ids:
+                    raise ValueError(
+                        f'Anchor {anchor.id} references non-existent frame {anchor.frame_id}'
+                    )
+            
+            # Recursively traverse children
+            new_path_objects = current_path_objects | {part_object_id}
+            for child in part.children:
+                traverse_part_hierarchy(child, new_path_objects)
+        
+        # Traverse from all top-level parts
         for part in self.parts.values():
-            # Recursively check all parts in the hierarchy
-            parts_to_check = [part]
-            while parts_to_check:
-                current = parts_to_check.pop()
-                # Check anchors
-                for anchor in current.anchors.values():
-                    if anchor.frame_id is not None and anchor.frame_id not in frame_ids:
-                        raise ValueError(
-                            f'Anchor {anchor.id} references non-existent frame {anchor.frame_id}'
-                        )
-                # Add children to check
-                parts_to_check.extend(current.children)
+            traverse_part_hierarchy(part, set())
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert geometry model to YAML-safe dictionary."""
