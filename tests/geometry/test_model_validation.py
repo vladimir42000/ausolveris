@@ -137,6 +137,57 @@ def test_nested_parts():
     assert model.parts["parent"].children[0].id == "child"
     assert model.parts["parent"].children[0].children[0].id == "grandchild"
 
+def test_duplicate_part_id_in_hierarchy():
+    """Test rejection of duplicate part ids anywhere in hierarchy."""
+    # Create parts with same id at different levels
+    child1 = Part(id="duplicate_id", name="Child 1")
+    child2 = Part(id="child2", name="Child 2")
+    parent = Part(id="parent", name="Parent", children=[child1, child2])
+    
+    # This should be fine because parent.id != child1.id
+    model = GeometryModel(parts={"parent": parent})
+    
+    # Now create a hierarchy where a nested part has same id as a top-level part
+    nested = Part(id="top_level", name="Nested")
+    middle = Part(id="middle", name="Middle", children=[nested])
+    top = Part(id="top_level", name="Top Level", children=[middle])
+    
+    # This should fail because top and nested have same id
+    with pytest.raises(ValueError, match='Duplicate part id "top_level" found in hierarchy'):
+        GeometryModel(parts={"top_level": top})
+
+def test_cycle_detection_in_hierarchy():
+    """Test rejection of cycles in part hierarchy."""
+    # Create a cycle: part1 -> part2 -> part1
+    # First, create parts without children
+    part1 = Part(id="part1", name="Part 1", children=[])
+    part2 = Part(id="part2", name="Part 2", children=[])
+    
+    # Set up the cycle by modifying children lists
+    # This creates a direct cycle
+    part1.children.append(part2)
+    part2.children.append(part1)
+    
+    # The implementation must detect this cycle and raise the exact cycle error
+    # We'll add part1 to the top-level parts (part2 is reachable through children)
+    # The error message must be exactly: 'Cycle detected in part hierarchy involving part "part1"'
+    # or similar with "part2", but it must be a cycle error, not a duplicate-id error
+    with pytest.raises(ValueError, match=r'Cycle detected in part hierarchy involving part "part1"'):
+        GeometryModel(parts={"part1": part1})
+
+def test_valid_multi_level_hierarchy():
+    """Test valid multi-level hierarchy passes validation."""
+    level3 = Part(id="level3", name="Level 3")
+    level2a = Part(id="level2a", name="Level 2A", children=[level3])
+    level2b = Part(id="level2b", name="Level 2B")
+    level1 = Part(id="level1", name="Level 1", children=[level2a, level2b])
+    
+    # This should not raise any errors
+    model = GeometryModel(parts={"level1": level1})
+    assert model.parts["level1"].children[0].id == "level2a"
+    assert model.parts["level1"].children[1].id == "level2b"
+    assert model.parts["level1"].children[0].children[0].id == "level3"
+
 
 def test_key_id_mismatch_validation():
     """Test validation for mismatched dictionary keys and object IDs."""
