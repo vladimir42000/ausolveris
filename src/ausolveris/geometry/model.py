@@ -210,12 +210,16 @@ class GeometryModel:
         id: Optional[str] = None,
         name: str = "",
         parts: Optional[Dict[str, Part]] = None,
-        frames: Optional[Dict[str, Frame]] = None
+        frames: Optional[Dict[str, Frame]] = None,
+        points: Optional[Dict[str, Tuple[float, float, float]]] = None,
+        edges: Optional[Dict[str, Tuple[str, str]]] = None
     ):
         self.id = id if id is not None else str(uuid.uuid4())
         self.name = name.strip()
         self.parts = parts if parts is not None else {}
         self.frames = frames if frames is not None else {}
+        self.points = points if points is not None else {}
+        self.edges = edges if edges is not None else {}
         
         # Validate references
         self._validate()
@@ -283,6 +287,33 @@ class GeometryModel:
         # Traverse from all top-level parts
         for part in self.parts.values():
             traverse_part_hierarchy(part, set())
+
+        # === EXP-001 Primitive validation (in-memory only) ===
+        # points validation
+        for key, coords in self.points.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError(f'Point key must be non-empty id string: {repr(key)}')
+            if not isinstance(coords, (list, tuple)) or len(coords) != 3:
+                raise ValueError(f'Point "{key}" must contain exactly 3 numeric coordinates')
+            for c in coords:
+                if not isinstance(c, (int, float)):
+                    raise ValueError(f'Point "{key}" coordinates must be numeric: {c}')
+        
+        # edges validation
+        for key, edge in self.edges.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError(f'Edge key must be non-empty id string: {repr(key)}')
+            if not isinstance(edge, (list, tuple)) or len(edge) != 2:
+                raise ValueError(f'Edge "{key}" must contain exactly 2 point-id strings')
+            p1, p2 = edge
+            if not isinstance(p1, str) or not isinstance(p2, str):
+                raise ValueError(f'Edge "{key}" endpoints must be point-id strings')
+            if p1 not in self.points:
+                raise ValueError(f'Edge "{key}" references missing point "{p1}"')
+            if p2 not in self.points:
+                raise ValueError(f'Edge "{key}" references missing point "{p2}"')
+            if p1 == p2:
+                raise ValueError(f'Self-edge not allowed for "{key}": both endpoints "{p1}"')
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert geometry model to YAML-safe dictionary."""
