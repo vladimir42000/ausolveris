@@ -1,54 +1,65 @@
 # physics.py
 import math
-from typing import Set
 from .model import GeometryModel
 
-def flare_law_acoustic_objective(model: GeometryModel) -> float:
-    """
-    Compute acoustic objective based on flare geometry.
-    Assumes points define a central axis (sorted by x) and edges form a single connected chain.
-    Computes variance of cross-sectional areas (circular, area = π * r^2, r = sqrt(y^2+z^2)).
-    Returns:
-        - 0.0 if model has no points.
-        - float('inf') if geometry is invalid (disconnected, single point, missing edges, inconsistent).
-        - Positive variance for non‑uniform flares.
-    """
-    if not model.points:
-        return 0.0
-    if len(model.points) < 2:
-        return float('inf')
-    if not model.edges:
-        return float('inf')
-    
-    # Build adjacency and check connectivity
-    adj: dict[str, set[str]] = {}
+def _is_single_connected_component(model: GeometryModel) -> bool:
+    """Check if all points are connected in a single component via edges (DFS)."""
+    if not model.points or not model.edges:
+        return False
+    # Build adjacency list
+    adj = {pid: set() for pid in model.points}
     for start_id, end_id in model.edges.values():
-        adj.setdefault(start_id, set()).add(end_id)
-        adj.setdefault(end_id, set()).add(start_id)
-    
-    first = next(iter(model.points.keys()))
-    visited: set[str] = set()
-    stack = [first]
+        if start_id in adj and end_id in adj:
+            adj[start_id].add(end_id)
+            adj[end_id].add(start_id)
+    # Start DFS from any point
+    start = next(iter(model.points))
+    visited = set()
+    stack = [start]
     while stack:
         node = stack.pop()
         if node in visited:
             continue
         visited.add(node)
-        for nb in adj.get(node, []):
-            if nb not in visited:
-                stack.append(nb)
-    
-    if visited != set(model.points.keys()):
-        return float('inf')
-    
-    # Extract (x, r) sorted by x
-    points_data = []
-    for pid, (x, y, z) in model.points.items():
+        for neigh in adj.get(node, []):
+            if neigh not in visited:
+                stack.append(neigh)
+    return len(visited) == len(model.points)
+
+def flare_law_acoustic_objective(model: GeometryModel) -> float:
+    """
+    Normalized acoustic objective in [0,1]:
+    - 0.0 : empty model or perfect uniformity
+    - 1.0 : invalid/degenerate geometry (disconnected, single point, missing edges, etc.)
+    - else: normalized variance capped at 1.0
+    """
+    # Empty model → neutral (0.0)
+    if not model.points:
+        return 0.0
+
+    # Need at least 2 points
+    if len(model.points) < 2:
+        return 1.0
+
+    # Must have edges and form a single connected component
+    if not model.edges or not _is_single_connected_component(model):
+        return 1.0
+
+    # Extract points sorted by x
+    point_list = []
+    for (x, y, z) in model.points.values():
         r = math.hypot(y, z)
-        points_data.append((x, r))
-    points_data.sort(key=lambda p: p[0])
-    
-    areas = [math.pi * (r**2) for _, r in points_data]
+        if math.isnan(r):
+            return 1.0
+        point_list.append((x, r))
+    point_list.sort(key=lambda p: p[0])
+
+    # Compute areas
+    areas = [math.pi * (r**2) for (_, r) in point_list]
     mean = sum(areas) / len(areas)
     variance = sum((a - mean)**2 for a in areas) / len(areas)
-    return variance
+
+    # Normalize to [0,1] with cap
+    MAX_VARIANCE = 1000.0  # heuristic upper bound
+    normalized = min(variance / MAX_VARIANCE, 1.0)
+    return normalized
