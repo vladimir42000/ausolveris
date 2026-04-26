@@ -127,3 +127,67 @@ def optimize(model: GeometryModel,
         'history': history
     }
     return current, info
+
+from .acoustic_view import AcousticTopologyView
+
+def consume_acoustic_topology(view: AcousticTopologyView) -> dict:
+    """
+    Read-only consumption of validated acoustic topology.
+    Returns structural observables, no numerical acoustics.
+    
+    Raises:
+        ValueError: if view has errors (invalid topology).
+    
+    Returns dict with keys:
+        - patch_count: int
+        - interface_count: int
+        - observer_count: int
+        - source_group_count: int
+        - owner_count: int
+        - interface_side_pairs: list of tuples (side_a, side_b)
+        - orientation_metadata_present: bool (True if all patches have normal defined)
+        - duplicate_ownership_detected: bool
+        - unresolved_observers: list of observer ids with missing point/frame
+    """
+    if view.errors:
+        raise ValueError(f"Invalid acoustic topology: {view.errors}")
+    
+    patches = view.patches
+    interfaces = view.interfaces
+    observers = view.observers
+    
+    patch_count = len(patches)
+    interface_count = len(interfaces)
+    observer_count = len(observers)
+    
+    source_groups = {p.source_group for p in patches.values() if p.source_group}
+    source_group_count = len(source_groups)
+    
+    owners = {p.owner_id for p in patches.values()}
+    owner_count = len(owners)
+    
+    interface_side_pairs = [(iface.side_a, iface.side_b) for iface in interfaces.values()]
+    
+    orientation_metadata_present = all(len(p.normal) == 3 for p in patches.values())
+    
+    seen_boundaries = set()
+    duplicate_ownership_detected = False
+    for bid in patches:
+        if bid in seen_boundaries:
+            duplicate_ownership_detected = True
+            break
+        seen_boundaries.add(bid)
+    
+    unresolved_observers = []
+    
+    return {
+        'patch_count': patch_count,
+        'interface_count': interface_count,
+        'observer_count': observer_count,
+        'source_group_count': source_group_count,
+        'owner_count': owner_count,
+        'interface_side_pairs': interface_side_pairs,
+        'orientation_metadata_present': orientation_metadata_present,
+        'duplicate_ownership_detected': duplicate_ownership_detected,
+        'unresolved_observers': unresolved_observers,
+    }
