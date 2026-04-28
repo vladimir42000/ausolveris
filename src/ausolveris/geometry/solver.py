@@ -191,3 +191,118 @@ def consume_acoustic_topology(view: AcousticTopologyView) -> dict:
         'duplicate_ownership_detected': duplicate_ownership_detected,
         'unresolved_observers': unresolved_observers,
     }
+
+import hashlib
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import List, Dict, Any, Optional
+from .acoustic_view import AcousticTopologyView
+
+class BoundaryConditionPlaceholder(Enum):
+    RIGID_WALL = "rigid_wall_placeholder"
+    INTERFACE = "interface_placeholder"
+    SOURCE_PATCH = "source_patch_placeholder"
+    OBSERVER = "observer_placeholder"
+
+@dataclass
+class AcousticOperatorEntry:
+    """Structural placeholder for a single operator assembly entry."""
+    entry_id: str
+    topology_signature: str
+    entry_type: str
+    boundary_label: BoundaryConditionPlaceholder
+    side_convention: Optional[str] = None
+    orientation_sign: Optional[int] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class AcousticOperatorAssemblyPackage:
+    """Non-physical operator assembly output."""
+    operator_package_id: str
+    topology_signature: str
+    benchmark_descriptor_id: str
+    non_physical: bool = True
+    physical_kernel: str = "none"
+    numerical_values_present: bool = False
+    solver_stage: str = "operator_assembly_stub"
+    entries: List[AcousticOperatorEntry] = field(default_factory=list)
+
+class AcousticOperatorAssemblyStub:
+    """Deterministic placeholder assembly stub. No acoustic physics."""
+
+    def assemble(self, topology_view: 'AcousticTopologyView', benchmark_descriptor_id: str) -> AcousticOperatorAssemblyPackage:
+        # 1. Benchmark Readiness check (Strictly require the flag, default to False)
+        is_ready = getattr(topology_view, "is_benchmark_ready", False)
+        if not is_ready:
+            raise ValueError("AcousticTopologyView is not benchmark-ready")
+
+        # 2. Validate metadata / rejection cases
+        if not topology_view.observers:
+            raise ValueError("Missing observer mapping")
+            
+        has_source = any(p.source_group for p in topology_view.patches.values())
+        if not has_source:
+            raise ValueError("Missing source patch grouping")
+            
+        for iface in topology_view.interfaces.values():
+            if iface.side_a == iface.side_b:
+                raise ValueError(f"Invalid interface side metadata: side_a == side_b for {iface.interface_id}")
+
+        for patch in topology_view.patches.values():
+            label = getattr(patch, 'bc_label', 'rigid_wall_placeholder')
+            try:
+                BoundaryConditionPlaceholder(label)
+            except ValueError:
+                raise ValueError(f"Unsupported boundary condition label: {label}")
+                
+            if not getattr(patch, 'normal', None) or len(patch.normal) != 3:
+                raise ValueError("Missing orientation/sign metadata")
+
+        # 3. Assemble deterministic structures
+        topology_sig = f"sig_{len(topology_view.patches)}_{len(topology_view.interfaces)}"
+        
+        # FIX: Deterministic SHA-256 ID instead of Python's salted hash()
+        raw_id = (topology_sig + benchmark_descriptor_id).encode('utf-8')
+        hashed_id = hashlib.sha256(raw_id).hexdigest()[:8]
+        package_id = f"sol002_stub_{hashed_id}"
+
+        entries = []
+        for pid, patch in sorted(topology_view.patches.items()):
+            label = getattr(patch, 'bc_label', 'rigid_wall_placeholder')
+            if getattr(patch, 'source_group', None):
+                label = 'source_patch_placeholder'
+                
+            entries.append(AcousticOperatorEntry(
+                entry_id=f"patch_{pid}",
+                topology_signature=topology_sig,
+                entry_type="patch",
+                boundary_label=BoundaryConditionPlaceholder(label)
+            ))
+            
+        for iid, iface in sorted(topology_view.interfaces.items()):
+            entries.append(AcousticOperatorEntry(
+                entry_id=f"interface_{iid}",
+                topology_signature=topology_sig,
+                entry_type="interface",
+                boundary_label=BoundaryConditionPlaceholder.INTERFACE,
+                side_convention=f"{iface.side_a}->{iface.side_b}"
+            ))
+
+        for oid, obs in sorted(topology_view.observers.items()):
+            entries.append(AcousticOperatorEntry(
+                entry_id=f"observer_{oid}",
+                topology_signature=topology_sig,
+                entry_type="observer",
+                boundary_label=BoundaryConditionPlaceholder.OBSERVER
+            ))
+
+        return AcousticOperatorAssemblyPackage(
+            operator_package_id=package_id,
+            topology_signature=topology_sig,
+            benchmark_descriptor_id=benchmark_descriptor_id,
+            entries=entries
+        )
+
+def assemble_acoustic_operator_stub(view: AcousticTopologyView, benchmark_descriptor_id: str) -> AcousticOperatorAssemblyPackage:
+    stub = AcousticOperatorAssemblyStub()
+    return stub.assemble(view, benchmark_descriptor_id)
