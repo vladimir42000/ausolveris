@@ -132,3 +132,28 @@ def evaluate_acoustic_benchmark_readiness(
         has_frame_metadata=has_frame,
         has_interface_side_metadata=has_interface_side,
     )
+
+@dataclass
+class AnalyticalBEMBenchmarkDescriptor(AcousticBenchmarkDescriptor):
+    source_citation: str = ""
+    reference_data_fields: List[str] = field(default_factory=list)
+    execution_status: str = "registered_not_executed"
+    physical_result_computed: bool = False
+    bem_implemented: bool = False
+    reference_matching_performed: bool = False
+
+def validate_analytical_bem_benchmark(descriptor: AnalyticalBEMBenchmarkDescriptor) -> List[str]:
+    errors = validate_acoustic_benchmark_descriptor(descriptor)
+    if not getattr(descriptor, 'source_citation', None):
+        errors.append("source_citation required for analytical benchmarks")
+    if not getattr(descriptor, 'reference_data_fields', None):
+        errors.append("expected reference fields must be declared")
+    if getattr(descriptor, 'execution_status', None) != "registered_not_executed":
+        errors.append("Execution explicitly rejected: must be 'registered_not_executed'")
+    if getattr(descriptor, 'physical_result_computed', True):
+        errors.append("Execution explicitly rejected: physical result/BEM must be false")
+    if getattr(descriptor, 'bem_implemented', True):
+        errors.append("Execution explicitly rejected: bem_implemented must be false")
+    if getattr(descriptor, 'reference_matching_performed', True):
+        errors.append("Execution explicitly rejected: reference_matching_performed must be false")
+    return errors
