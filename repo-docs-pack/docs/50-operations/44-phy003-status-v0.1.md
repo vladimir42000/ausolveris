@@ -1,0 +1,1 @@
+# PHY-003 Status – Vent/port acoustic inertance formulation\n\n**Baseline:** 202 tests\n**New Result:** 212 tests\nExplicitly no coupled enclosure modeling.\n

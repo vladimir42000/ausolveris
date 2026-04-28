@@ -1,0 +1,1 @@
+# PHY-002 Status – First enclosure case formulation\n\n**Baseline:** 192 tests\n**New Result:** 202 tests\nExplicitly no BEM/LEM framework.\n

@@ -398,3 +398,106 @@ def evaluate_phy001_single_case(input_data: SingleCaseAcousticFormulationInput) 
         wavenumber_rad_m=k,
         angular_frequency_rad_s=omega
     )
+
+@dataclass
+class FirstEnclosureFormulationInput:
+    topology_view: 'AcousticTopologyView'
+    operator_package: 'AcousticOperatorAssemblyPackage'
+    benchmark_id: str
+    cavity_volume_m3: float
+    rho0: float = 1.21
+    c0: float = 343.0
+
+@dataclass
+class FirstEnclosureFormulationResult:
+    cavity_volume_m3: float
+    rho0: float
+    c0: float
+    acoustic_compliance_m5_per_n: float
+    physical_case: str = "phy002_rigid_cavity_compliance"
+    formulation_scope: str = "single_case_only"
+    general_solver: bool = False
+    bem_implemented: bool = False
+    lem_implemented: bool = False
+    enclosure_solver: bool = False
+    driver_coupling: bool = False
+    impedance_computed: bool = False
+    spl_computed: bool = False
+
+def evaluate_phy002_first_enclosure_case(input_data: FirstEnclosureFormulationInput) -> FirstEnclosureFormulationResult:
+    if input_data.benchmark_id != "phy002_rigid_cavity_compliance":
+        raise ValueError(f"Unsupported benchmark case: {input_data.benchmark_id}")
+    if not getattr(input_data.topology_view, "is_benchmark_ready", False):
+        raise ValueError("Topology is not benchmark-ready")
+    if getattr(input_data.operator_package, "non_physical", None) is not True:
+        raise ValueError("Operator package must be explicitly marked non_physical")
+    if not getattr(input_data.topology_view, "observers", None):
+        raise ValueError("Missing observer mapping")
+    if input_data.cavity_volume_m3 is None:
+        raise ValueError("Missing cavity volume")
+    if input_data.cavity_volume_m3 <= 0:
+        raise ValueError("Cavity volume must be strictly positive")
+    if input_data.rho0 <= 0:
+        raise ValueError("Air density must be strictly positive")
+    if input_data.c0 <= 0:
+        raise ValueError("Sound speed must be strictly positive")
+        
+    V = input_data.cavity_volume_m3
+    rho0 = input_data.rho0
+    c0 = input_data.c0
+    ca = V / (rho0 * (c0 ** 2))
+    return FirstEnclosureFormulationResult(cavity_volume_m3=V, rho0=rho0, c0=c0, acoustic_compliance_m5_per_n=ca)
+
+@dataclass
+class PortInertanceFormulationInput:
+    topology_view: 'AcousticTopologyView'
+    operator_package: 'AcousticOperatorAssemblyPackage'
+    benchmark_id: str
+    effective_port_length_m: float
+    port_area_m2: float
+    rho0: float = 1.21
+
+@dataclass
+class PortInertanceFormulationResult:
+    port_area_m2: float
+    effective_port_length_m: float
+    rho0: float
+    acoustic_inertance_kg_per_m4: float
+    physical_case: str = "phy003_simple_port_inertance"
+    formulation_scope: str = "single_case_only"
+    general_solver: bool = False
+    bem_implemented: bool = False
+    lem_implemented: bool = False
+    bass_reflex_solver: bool = False
+    helmholtz_solver: bool = False
+    cavity_port_coupling: bool = False
+    driver_coupling: bool = False
+    impedance_computed: bool = False
+    spl_computed: bool = False
+    automatic_end_correction: bool = False
+
+def evaluate_phy003_port_inertance(input_data: PortInertanceFormulationInput) -> PortInertanceFormulationResult:
+    if input_data.benchmark_id != "phy003_simple_port_inertance":
+        raise ValueError(f"Unsupported benchmark case: {input_data.benchmark_id}")
+    if not getattr(input_data.topology_view, "is_benchmark_ready", False):
+        raise ValueError("Topology is not benchmark-ready")
+    if getattr(input_data.operator_package, "non_physical", None) is not True:
+        raise ValueError("Operator package must be explicitly marked non_physical")
+    if not getattr(input_data.topology_view, "observers", None):
+        raise ValueError("Missing observer mapping")
+    if input_data.port_area_m2 is None:
+        raise ValueError("Missing port area")
+    if input_data.port_area_m2 <= 0:
+        raise ValueError("Port area must be strictly positive")
+    if input_data.effective_port_length_m is None:
+        raise ValueError("Missing effective port length")
+    if input_data.effective_port_length_m <= 0:
+        raise ValueError("Effective port length must be strictly positive")
+    if input_data.rho0 <= 0:
+        raise ValueError("Air density must be strictly positive")
+        
+    S = input_data.port_area_m2
+    L_eff = input_data.effective_port_length_m
+    rho0 = input_data.rho0
+    m_a = (rho0 * L_eff) / S
+    return PortInertanceFormulationResult(port_area_m2=S, effective_port_length_m=L_eff, rho0=rho0, acoustic_inertance_kg_per_m4=m_a)

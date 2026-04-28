@@ -1,0 +1,1 @@
+# Port Inertance Formulation (v0.1)\n\n**Defined – PHY-003**\n\nPurpose: Provides a lumped acoustic inertance formulation for a port tube.\nFormula: `M_a = rho0 * L_eff / S`\nExclusions: Not a bass-reflex or Helmholtz solver.\n

@@ -1,0 +1,1 @@
+# First Enclosure Formulation (v0.1)\n\n**Defined – PHY-002**\n\nPurpose: Introduces exactly one enclosure-related physical sanity hook (`phy002_rigid_cavity_compliance`).\nFormula: `C_a = V / (rho0 * c0^2)`\nExclusions: Not a closed-box solver. No SPL or impedance.\n
