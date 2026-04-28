@@ -501,3 +501,87 @@ def evaluate_phy003_port_inertance(input_data: PortInertanceFormulationInput) ->
     rho0 = input_data.rho0
     m_a = (rho0 * L_eff) / S
     return PortInertanceFormulationResult(port_area_m2=S, effective_port_length_m=L_eff, rho0=rho0, acoustic_inertance_kg_per_m4=m_a)
+
+@dataclass
+class DriverMetadata:
+    fs_hz: float
+    qts: float
+    vas_m3: float
+
+@dataclass
+class DriverCouplingPackage:
+    coupling_package_id: str
+    coupling_mode: str
+    driver_metadata: Optional[DriverMetadata]
+    resonance_hz: float
+    formula_id: str
+    
+    coupling_stage: str = "lem001_driver_coupling_stub"
+    scalar_sanity_only: bool = True
+    full_lem_solver: bool = False
+    impedance_computed: bool = False
+    spl_computed: bool = False
+    frequency_sweep_computed: bool = False
+    optimization_performed: bool = False
+    bass_reflex_solver: bool = False
+    closed_box_solver: bool = False
+
+def evaluate_lem001_driver_coupling_stub(
+    coupling_mode: str,
+    driver_meta: Optional[DriverMetadata],
+    cavity_result: Optional[FirstEnclosureFormulationResult],
+    port_result: Optional[PortInertanceFormulationResult] = None
+) -> DriverCouplingPackage:
+    
+    supported_modes = ["lem001_closed_box_resonance_sanity", "lem001_port_cavity_resonance_sanity"]
+    if coupling_mode not in supported_modes:
+        raise ValueError(f"Unsupported coupling mode: {coupling_mode}")
+        
+    if not isinstance(cavity_result, FirstEnclosureFormulationResult):
+        raise ValueError("Missing or invalid PHY-002 cavity compliance result")
+        
+    if driver_meta:
+        if driver_meta.fs_hz <= 0: raise ValueError("fs_hz must be > 0")
+        if driver_meta.qts <= 0: raise ValueError("qts must be > 0")
+        if driver_meta.vas_m3 <= 0: raise ValueError("vas_m3 must be > 0")
+
+    res_hz = 0.0
+    formula = ""
+    raw_sig = f"{coupling_mode}_{cavity_result.cavity_volume_m3:.6f}"
+    
+    if coupling_mode == "lem001_closed_box_resonance_sanity":
+        if not driver_meta:
+            raise ValueError("Driver metadata required for closed-box sanity")
+            
+        vb = cavity_result.cavity_volume_m3
+        vas = driver_meta.vas_m3
+        fs = driver_meta.fs_hz
+        
+        res_hz = fs * math.sqrt(1.0 + (vas / vb))
+        formula = "fc = fs * sqrt(1 + Vas/Vb)"
+        raw_sig += f"_{fs:.6f}_{vas:.6f}_{driver_meta.qts:.6f}"
+        
+    elif coupling_mode == "lem001_port_cavity_resonance_sanity":
+        if not isinstance(port_result, PortInertanceFormulationResult):
+            raise ValueError("Missing or invalid PHY-003 port inertance result for port-cavity mode")
+            
+        ca = cavity_result.acoustic_compliance_m5_per_n
+        ma = port_result.acoustic_inertance_kg_per_m4
+        
+        res_hz = 1.0 / (2.0 * math.pi * math.sqrt(ma * ca))
+        formula = "f = 1/(2*pi*sqrt(Ma*Ca))"
+        raw_sig += f"_{ma:.6f}_{ca:.6f}"
+        
+        if driver_meta:
+            raw_sig += f"_{driver_meta.fs_hz:.6f}_{driver_meta.qts:.6f}_{driver_meta.vas_m3:.6f}"
+
+    hashed_id = hashlib.sha256(raw_sig.encode('utf-8')).hexdigest()[:16]
+    package_id = f"lem_{hashed_id}"
+
+    return DriverCouplingPackage(
+        coupling_package_id=package_id,
+        coupling_mode=coupling_mode,
+        driver_metadata=driver_meta,
+        resonance_hz=res_hz,
+        formula_id=formula
+    )
