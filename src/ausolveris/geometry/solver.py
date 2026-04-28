@@ -306,3 +306,95 @@ class AcousticOperatorAssemblyStub:
 def assemble_acoustic_operator_stub(view: AcousticTopologyView, benchmark_descriptor_id: str) -> AcousticOperatorAssemblyPackage:
     stub = AcousticOperatorAssemblyStub()
     return stub.assemble(view, benchmark_descriptor_id)
+
+import math
+import cmath
+from dataclasses import dataclass
+
+@dataclass
+class SingleCaseAcousticFormulationInput:
+    topology_view: 'AcousticTopologyView'
+    operator_package: 'AcousticOperatorAssemblyPackage'
+    benchmark_id: str
+    frequency_hz: float
+    source_distance_m: float
+    volume_velocity_m3_s: float = 1.0
+    rho0: float = 1.21
+    c0: float = 343.0
+
+@dataclass
+class SingleCaseAcousticFormulationResult:
+    frequency_hz: float
+    pressure_complex: complex
+    pressure_magnitude: float
+    source_observer_distance_m: float
+    rho0: float
+    c0: float
+    volume_velocity_m3_s: float
+    wavenumber_rad_m: float
+    angular_frequency_rad_s: float
+    physical_case: str = "phy001_free_field_monopole_pressure"
+    formulation_scope: str = "single_case_only"
+    general_solver: bool = False
+    bem_implemented: bool = False
+    lem_implemented: bool = False
+    enclosure_model: bool = False
+
+def evaluate_phy001_single_case(input_data: SingleCaseAcousticFormulationInput) -> SingleCaseAcousticFormulationResult:
+    # 1. Benchmark ID Validation
+    if input_data.benchmark_id != "phy001_free_field_monopole_pressure":
+        raise ValueError(f"Unsupported benchmark case: {input_data.benchmark_id}")
+        
+    # 2. Benchmark Readiness Validation
+    if not getattr(input_data.topology_view, "is_benchmark_ready", False):
+        raise ValueError("Topology is not benchmark-ready")
+        
+    # 3. Non-physical Operator Precondition
+    if getattr(input_data.operator_package, "non_physical", None) is not True:
+        raise ValueError("Operator package must be explicitly marked non_physical")
+
+    # 4. Source Group & Observer Validation
+    source_groups = {p.source_group for p in input_data.topology_view.patches.values() if getattr(p, 'source_group', None)}
+    if len(source_groups) == 0:
+        raise ValueError("Missing source-group declaration")
+    if len(source_groups) > 1:
+        raise ValueError("Multiple source groups not supported in PHY-001")
+        
+    observers = input_data.topology_view.observers
+    if not observers:
+        raise ValueError("Missing observer mapping")
+    if len(observers) > 1:
+        raise ValueError("Multiple observers not supported in PHY-001")
+        
+    # 5. Frequency and Distance Validation
+    if input_data.frequency_hz <= 0:
+        raise ValueError("Frequency must be strictly positive")
+
+    r = input_data.source_distance_m
+    if r <= 0:
+        raise ValueError("Source-observer distance must be strictly positive (r > 0)")
+        
+    # 6. Formulation Hook Execution
+    f = input_data.frequency_hz
+    rho0 = input_data.rho0
+    c0 = input_data.c0
+    Q = input_data.volume_velocity_m3_s
+    
+    omega = 2.0 * math.pi * f
+    k = omega / c0
+    
+    amplitude = (rho0 * omega * Q) / (4.0 * math.pi * r)
+    phase_factor = cmath.exp(-1j * k * r)
+    p_complex = 1j * amplitude * phase_factor
+    
+    return SingleCaseAcousticFormulationResult(
+        frequency_hz=f,
+        pressure_complex=p_complex,
+        pressure_magnitude=abs(p_complex),
+        source_observer_distance_m=r,
+        rho0=rho0,
+        c0=c0,
+        volume_velocity_m3_s=Q,
+        wavenumber_rad_m=k,
+        angular_frequency_rad_s=omega
+    )
