@@ -115,3 +115,75 @@ def apply_step(model: GeometryModel, step: Dict[str, Tuple[float, float, float]]
                                      old[1] + delta[1],
                                      old[2] + delta[2])
     return new_model
+
+import hashlib
+import yaml
+from dataclasses import dataclass, field
+from typing import Dict, Any
+
+@dataclass
+class ObservableScoreDescriptor:
+    descriptor_id: str
+    target_observable: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class ObservableScorePackage:
+    score_package_id: str
+    source_physical_case: str
+    observable_labels: list
+    normalized_placeholder_score: float
+    input_signature: str
+    supported_case_count: int
+    formulation_scope: str
+    metadata_summary: Dict[str, Any] = field(default_factory=dict)
+    
+    score_stage: str = "observable_score_stub"
+    non_physical_score: bool = True
+    optimization_performed: bool = False
+    fitness_function: str = "none"
+    ranking_performed: bool = False
+
+def validate_observable_score_descriptor(descriptor: ObservableScoreDescriptor) -> list:
+    errors = []
+    if not descriptor.descriptor_id:
+        errors.append("descriptor_id required")
+    if not descriptor.target_observable:
+        errors.append("target_observable required")
+    return errors
+
+def compute_observable_score_stub(formulation_result: Any, descriptor: ObservableScoreDescriptor) -> ObservableScorePackage:
+    errors = validate_observable_score_descriptor(descriptor)
+    if errors:
+        raise ValueError(f"Invalid descriptor: {errors}")
+
+    physical_case = getattr(formulation_result, "physical_case", None)
+    supported_cases = [
+        "phy001_free_field_monopole_pressure",
+        "phy002_rigid_cavity_compliance",
+        "phy003_simple_port_inertance"
+    ]
+    if physical_case not in supported_cases:
+        raise ValueError(f"Unsupported formulation output case: {physical_case}")
+
+    raw_sig = f"{physical_case}_{descriptor.descriptor_id}"
+    if physical_case == "phy001_free_field_monopole_pressure":
+        raw_sig += f"_{getattr(formulation_result, 'pressure_magnitude', 0.0):.6f}"
+    elif physical_case == "phy002_rigid_cavity_compliance":
+        raw_sig += f"_{getattr(formulation_result, 'acoustic_compliance_m5_per_n', 0.0):.6f}"
+    elif physical_case == "phy003_simple_port_inertance":
+        raw_sig += f"_{getattr(formulation_result, 'acoustic_inertance_kg_per_m4', 0.0):.6f}"
+
+    hashed_id = hashlib.sha256(raw_sig.encode('utf-8')).hexdigest()[:16]
+    package_id = f"score_{hashed_id}"
+
+    return ObservableScorePackage(
+        score_package_id=package_id,
+        source_physical_case=physical_case,
+        observable_labels=[descriptor.target_observable],
+        normalized_placeholder_score=0.5,
+        input_signature=raw_sig,
+        supported_case_count=len(supported_cases),
+        formulation_scope=getattr(formulation_result, "formulation_scope", "single_case_only"),
+        metadata_summary=descriptor.metadata.copy()
+    )
