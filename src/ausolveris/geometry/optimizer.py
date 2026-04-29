@@ -187,3 +187,73 @@ def compute_observable_score_stub(formulation_result: Any, descriptor: Observabl
         formulation_scope=getattr(formulation_result, "formulation_scope", "single_case_only"),
         metadata_summary=descriptor.metadata.copy()
     )
+
+@dataclass
+class SingleObjectiveFitnessDescriptor:
+    objective_label: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class SingleObjectiveFitnessPackage:
+    fitness_package_id: str
+    source_package_id: str
+    source_package_family: str
+    objective_label: str
+    
+    placeholder_fitness_value: float = 0.5
+    placeholder_value_non_physical: bool = True
+    acoustic_interpretation: bool = False
+    
+    fitness_stage: str = "single_objective_fitness_stub"
+    non_physical_fitness: bool = True
+    optimization_performed: bool = False
+    ranking_performed: bool = False
+    design_quality_evaluated: bool = False
+    spl_fitness: bool = False
+    impedance_fitness: bool = False
+    frequency_response_fitness: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+FORBIDDEN_FITNESS_LABELS = {
+    "spl_fitness", "impedance_fitness", "frequency_response_fitness", 
+    "acoustic_merit", "design_quality", "ranking", "recommendation", 
+    "target_curve_match", "optimized_candidate", "best_design"
+}
+
+def validate_fitness_descriptor_label(label: str) -> None:
+    if label.lower() in FORBIDDEN_FITNESS_LABELS:
+        raise ValueError(f"Fitness label '{label}' is strictly forbidden by OPT-003.")
+
+def build_single_objective_fitness_descriptor_stub(
+    input_package: Any,
+    descriptor: SingleObjectiveFitnessDescriptor
+) -> SingleObjectiveFitnessPackage:
+    
+    validate_fitness_descriptor_label(descriptor.objective_label)
+    
+    source_id = ""
+    family = ""
+    
+    # We duck-type the class name to completely avoid circular import risks here
+    cls_name = input_package.__class__.__name__
+    
+    if cls_name == "ObservableScorePackage":
+        source_id = getattr(input_package, "score_package_id", "unknown")
+        family = "OPT-002"
+    elif cls_name == "ObservableVisualizationPackage":
+        source_id = getattr(input_package, "plot_package_id", "unknown")
+        family = "VIS-001"
+    else:
+        raise TypeError("Unsupported package type. Expected ObservableScorePackage or ObservableVisualizationPackage.")
+        
+    raw_sig = f"{source_id}_{descriptor.objective_label}"
+    hashed_id = hashlib.sha256(raw_sig.encode('utf-8')).hexdigest()[:16]
+    package_id = f"fit_{hashed_id}"
+    
+    return SingleObjectiveFitnessPackage(
+        fitness_package_id=package_id,
+        source_package_id=source_id,
+        source_package_family=family,
+        objective_label=descriptor.objective_label,
+        metadata=descriptor.metadata.copy()
+    )
