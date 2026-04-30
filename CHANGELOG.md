@@ -14,3 +14,9 @@
 - README capability disclaimer added.
 - 262-test baseline preserved.
 - No solver capability added.
+
+## BEM-PLAN-001
+- Rigid-sphere BEM execution plan defined.
+- Phase 2 boundary locked for ben004_rigid_sphere_scattering.
+- Staged execution sequence (BEM-001 through BEM-004) outlined.
+- No BEM solver logic implemented.
