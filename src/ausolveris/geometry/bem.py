@@ -353,3 +353,85 @@ def build_incident_field_reference_scaffold(
         deterministic_package_id=package_id,
     )
 
+# ---------------------------------------------------------------------------
+# BEM‑004B : sound‑hard Neumann RHS assembly, no solve
+# ---------------------------------------------------------------------------
+from typing import List, Tuple
+import math
+import hashlib
+
+@dataclass
+class BoundaryRHSPackage:
+    """Deterministic package containing only the boundary RHS vector – no solve."""
+    assembly_stage: str
+    benchmark_id: str
+    fixture_hash: str
+    selected_panel_indices: List[int]
+    k_rad_m: float
+    amplitude: complex
+    incident_direction: Tuple[float, float, float]
+    rhs_values: List[complex]               # length N, deterministic order
+    sound_hard_neumann: bool
+    scattering_solve_performed: bool
+    bem_linear_system_solved: bool
+    operator_assembled: bool
+    rhs_only: bool
+    deterministic_package_id: str
+
+
+def assemble_boundary_rhs(
+    fixture: RigidSphereMeshFixture,
+    k_rad_m: float,
+    amplitude: complex,
+    incident_direction: Tuple[float, float, float],
+    selected_indices: List[int],
+) -> BoundaryRHSPackage:
+    """
+    Build a deterministic RHS vector for the Neumann problem:
+        rhs_j = -∂p_inc/∂n  (sound‑hard sphere)
+
+    Uses the BEM‑004A scaffold internally but returns a minimal package.
+    No BEM matrix, no operator application, no solve.
+    """
+    # Delegate incident computation to the existing scaffold (validates inputs)
+    scaffold = build_incident_field_reference_scaffold(
+        fixture=fixture,
+        k_rad_m=k_rad_m,
+        amplitude=amplitude,
+        incident_direction=incident_direction,
+        selected_indices=selected_indices,
+    )
+
+    rhs = scaffold.neumann_rhs_scaffold  # already computed as list
+
+    # ---- Deterministic package ID (SHA‑256) ----
+    id_lines = []
+    id_lines.append("assembly_stage=bem004b_boundary_rhs_assembly_no_solve")
+    id_lines.append(f"benchmark_id={fixture.benchmark_id}")
+    id_lines.append(f"fixture_hash={fixture.fixture_hash}")
+    id_lines.append(f"k_rad_m={k_rad_m:.15e}")
+    id_lines.append(f"amplitude=({amplitude.real:.15e},{amplitude.imag:.15e})")
+    id_lines.append(f"incident_direction=({incident_direction[0]:.15e},{incident_direction[1]:.15e},{incident_direction[2]:.15e})")
+    sorted_idx = sorted(selected_indices)
+    id_lines.append(f"selected_indices={sorted_idx}")
+    for z in rhs:
+        id_lines.append(f"rhs=({z.real:.15e},{z.imag:.15e})")
+    hash_input = "\n".join(id_lines)
+    package_id = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    return BoundaryRHSPackage(
+        assembly_stage="bem004b_boundary_rhs_assembly_no_solve",
+        benchmark_id=fixture.benchmark_id,
+        fixture_hash=fixture.fixture_hash,
+        selected_panel_indices=sorted_idx,
+        k_rad_m=k_rad_m,
+        amplitude=amplitude,
+        incident_direction=scaffold.incident_direction,
+        rhs_values=rhs,
+        sound_hard_neumann=True,
+        scattering_solve_performed=False,
+        bem_linear_system_solved=False,
+        operator_assembled=False,
+        rhs_only=True,
+        deterministic_package_id=package_id,
+    )
