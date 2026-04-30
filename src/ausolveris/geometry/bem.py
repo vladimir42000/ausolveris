@@ -204,3 +204,152 @@ def assemble_non_singular_prototype_operator(
         impedance_computed=False,
         deterministic_package_id=package_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# BEM‑004A : incident‑field and analytical‑reference scaffold
+# ---------------------------------------------------------------------------
+from dataclasses import field
+from typing import Tuple, Optional
+
+@dataclass
+class TolerancePolicyScaffold:
+    """Declared tolerance policy for future reference comparison – not applied."""
+    policy_status: str = "declared_not_applied"
+    future_application_stage: str = "BEM-004D"
+    complex_pressure_relative_tolerance: float = 1.0e-2
+    complex_pressure_absolute_tolerance: float = 1.0e-6
+    boundary_rhs_relative_tolerance: float = 1.0e-12
+    boundary_rhs_absolute_tolerance: float = 1.0e-12
+    comparison_norms_declared: List[str] = field(default_factory=lambda: [
+        "max_abs_error", "relative_l2_error"
+    ])
+    comparison_executed: bool = False
+
+@dataclass
+class IncidentFieldReferenceScaffold:
+    """BEM‑004A scaffold: incident field, Neumann RHS, tolerance policy."""
+    scaffold_stage: str
+    benchmark_id: str
+    sound_hard_neumann_convention: bool
+    incident_field_evaluated: bool
+    neumann_rhs_scaffolded: bool
+    scattering_solve_performed: bool
+    bem_linear_system_solved: bool
+    analytical_reference_evaluated: bool
+    reference_matching_performed: bool
+    spl_computed: bool
+    impedance_computed: bool
+    k_rad_m: float
+    amplitude: complex
+    incident_direction: Tuple[float, float, float]   # unit vector
+    selected_panel_indices: List[int]
+    # per‑panel data (length N)
+    panel_centroids: List[Tuple[float, float, float]]
+    panel_normals: List[Tuple[float, float, float]]
+    incident_pressure: List[complex]          # p_inc at each centroid
+    incident_normal_derivative: List[complex] # ∂p_inc/∂n
+    neumann_rhs_scaffold: List[complex]       # -∂p_inc/∂n
+    tolerance_policy: TolerancePolicyScaffold
+    fixture_hash: str
+    deterministic_package_id: str
+
+
+def _dot(a: Tuple[float, float, float], b: Tuple[float, float, float]) -> float:
+    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+
+def _normalise_or_fail(v: Tuple[float, float, float]) -> Tuple[float, float, float]:
+    norm = math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
+    if norm == 0.0 or not math.isfinite(norm):
+        raise ValueError("Incident direction must be nonzero and finite")
+    return (v[0]/norm, v[1]/norm, v[2]/norm)
+
+
+def build_incident_field_reference_scaffold(
+    fixture: RigidSphereMeshFixture,
+    k_rad_m: float,
+    amplitude: complex,
+    incident_direction: Tuple[float, float, float],
+    selected_indices: List[int],
+) -> IncidentFieldReferenceScaffold:
+    """
+    Create a scaffold containing incident pressure, its normal derivative, and
+    the Neumann boundary‑data RHS for a selected set of panels on the rigid sphere.
+    No BEM system is solved; only analytical expressions are evaluated.
+    """
+    if fixture.benchmark_id != "ben004_rigid_sphere_scattering_registered":
+        raise ValueError("Fixture must be ben004_rigid_sphere_scattering_registered")
+    if not math.isfinite(k_rad_m) or k_rad_m < 0.0:
+        raise ValueError("k_rad_m must be finite and non‑negative")
+    if not selected_indices:
+        raise ValueError("selected_indices must not be empty")
+    if len(set(selected_indices)) != len(selected_indices):
+        raise ValueError("Duplicate panel indices are not allowed")
+    if not all(isinstance(idx, int) and 0 <= idx < len(fixture.panels) for idx in selected_indices):
+        raise ValueError("Invalid panel index – must exist in fixture")
+
+    # Normalise incident direction
+    d = _normalise_or_fail(incident_direction)
+
+    N = len(selected_indices)
+    centroids = [fixture.panels[idx].centroid for idx in selected_indices]
+    normals = [fixture.panels[idx].outward_normal for idx in selected_indices]
+
+    p_inc = []
+    dpdn_inc = []
+    rhs = []
+    for i in range(N):
+        x = centroids[i]
+        n = normals[i]
+        dx = _dot(d, x)
+        p = amplitude * cmath.exp(1j * k_rad_m * dx)
+        dp = 1j * k_rad_m * _dot(d, n) * p
+        p_inc.append(p)
+        dpdn_inc.append(dp)
+        rhs.append(-dp)
+
+    # ---- deterministic package ID ----
+    id_lines = []
+    id_lines.append(f"scaffold_stage=bem004a_incident_field_reference_scaffold")
+    id_lines.append(f"benchmark_id={fixture.benchmark_id}")
+    id_lines.append(f"fixture_hash={fixture.fixture_hash}")
+    id_lines.append(f"k_rad_m={k_rad_m:.15e}")
+    id_lines.append(f"amplitude={amplitude.real:.15e}+{amplitude.imag:.15e}j")
+    id_lines.append(f"incident_direction={d[0]:.15e},{d[1]:.15e},{d[2]:.15e}")
+    sorted_idx = sorted(selected_indices)
+    id_lines.append(f"selected_indices={sorted_idx}")
+    # include actual computed values
+    for val in p_inc:
+        id_lines.append(f"p_inc={val.real:.15e}+{val.imag:.15e}j")
+    for val in dpdn_inc:
+        id_lines.append(f"dpdn={val.real:.15e}+{val.imag:.15e}j")
+    hash_input = "\n".join(id_lines)
+    package_id = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    return IncidentFieldReferenceScaffold(
+        scaffold_stage="bem004a_incident_field_reference_scaffold",
+        benchmark_id=fixture.benchmark_id,
+        sound_hard_neumann_convention=True,
+        incident_field_evaluated=True,
+        neumann_rhs_scaffolded=True,
+        scattering_solve_performed=False,
+        bem_linear_system_solved=False,
+        analytical_reference_evaluated=False,
+        reference_matching_performed=False,
+        spl_computed=False,
+        impedance_computed=False,
+        k_rad_m=k_rad_m,
+        amplitude=amplitude,
+        incident_direction=d,
+        selected_panel_indices=sorted_idx,
+        panel_centroids=centroids,
+        panel_normals=normals,
+        incident_pressure=p_inc,
+        incident_normal_derivative=dpdn_inc,
+        neumann_rhs_scaffold=rhs,
+        tolerance_policy=TolerancePolicyScaffold(),
+        fixture_hash=fixture.fixture_hash,
+        deterministic_package_id=package_id,
+    )
+
