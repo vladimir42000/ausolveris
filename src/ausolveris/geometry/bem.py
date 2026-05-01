@@ -1,16 +1,16 @@
 """
 BEM‑001 : Helmholtz Green‑function utility (scalar, free-space).
 BEM‑003 : non‑singular operator prototype (off‑diagonal, controlled subset).
-
-Convention:
-    G(r, k) = exp(i * k * r) / (4 * pi * r)
+BEM‑004A : incident‑field and analytical‑reference scaffold.
+BEM‑004B : sound‑hard Neumann RHS assembly, no solve.
+BEM‑004C : tiny regularized linear‑solve prototype, controlled subset only.
 """
 
 import math
 import cmath
 import hashlib
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import List, Tuple, Optional
 
 from .benchmark import RigidSphereMeshFixture
 
@@ -75,6 +75,7 @@ def helmholtz_wavenumber(frequency_hz: float, sound_speed_m_s: float) -> float:
 class NonSingularOperatorPrototype:
     """Container for a small, off‑diagonal, non‑singular interaction matrix."""
     matrix: List[List[complex]]
+    selected_panel_indices: List[int]          # BEM‑004C extension (populated during assembly)
     assembly_stage: str
     benchmark_id: str
     non_singular_only: bool
@@ -192,6 +193,7 @@ def assemble_non_singular_prototype_operator(
 
     return NonSingularOperatorPrototype(
         matrix=matrix,
+        selected_panel_indices=sorted_idx,   # new field
         assembly_stage="bem003_non_singular_operator_prototype",
         benchmark_id=fixture.benchmark_id,
         non_singular_only=True,
@@ -209,9 +211,6 @@ def assemble_non_singular_prototype_operator(
 # ---------------------------------------------------------------------------
 # BEM‑004A : incident‑field and analytical‑reference scaffold
 # ---------------------------------------------------------------------------
-from dataclasses import field
-from typing import Tuple, Optional
-
 @dataclass
 class TolerancePolicyScaffold:
     """Declared tolerance policy for future reference comparison – not applied."""
@@ -353,13 +352,10 @@ def build_incident_field_reference_scaffold(
         deterministic_package_id=package_id,
     )
 
+
 # ---------------------------------------------------------------------------
 # BEM‑004B : sound‑hard Neumann RHS assembly, no solve
 # ---------------------------------------------------------------------------
-from typing import List, Tuple
-import math
-import hashlib
-
 @dataclass
 class BoundaryRHSPackage:
     """Deterministic package containing only the boundary RHS vector – no solve."""
@@ -433,5 +429,162 @@ def assemble_boundary_rhs(
         bem_linear_system_solved=False,
         operator_assembled=False,
         rhs_only=True,
+        deterministic_package_id=package_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# BEM‑004C : tiny regularized linear‑solve prototype
+# ---------------------------------------------------------------------------
+from dataclasses import dataclass
+
+@dataclass
+class RegularizedSolvePrototype:
+    """Result of the tiny regularized solve – prototype only, not physical."""
+    solve_stage: str
+    benchmark_id: str
+    prototype_only: bool
+    regularized_solve_performed: bool
+    regularization_epsilon: float
+    regularization_type: str
+    regularization_physical: bool
+    singular_integral_approximation: bool
+    full_sphere_solve: bool
+    boundary_integral_correctness_claim: bool
+    scattered_pressure_computed: bool
+    observer_pressure_computed: bool
+    reference_matching_performed: bool
+    tolerance_policy_applied: bool
+    spl_computed: bool
+    directivity_computed: bool
+    impedance_computed: bool
+    solution: List[complex]
+    deterministic_package_id: str
+
+
+def _complex_gaussian_elimination(A: List[List[complex]], b: List[complex]) -> List[complex]:
+    """
+    Solve A x = b for a small square complex matrix using Gaussian elimination
+    with partial pivoting.  A and b are modified in place.
+    Returns solution vector.
+    """
+    n = len(A)
+    # forward elimination
+    for col in range(n):
+        # partial pivot
+        max_row = max(range(col, n), key=lambda r: abs(A[r][col]))
+        if col != max_row:
+            A[col], A[max_row] = A[max_row], A[col]
+            b[col], b[max_row] = b[max_row], b[col]
+        # eliminate below
+        for row in range(col+1, n):
+            factor = A[row][col] / A[col][col]
+            for j in range(col, n):
+                A[row][j] -= factor * A[col][j]
+            b[row] -= factor * b[col]
+    # back substitution
+    x = [0j] * n
+    for i in range(n-1, -1, -1):
+        s = sum(A[i][j] * x[j] for j in range(i+1, n))
+        x[i] = (b[i] - s) / A[i][i]
+    return x
+
+
+def regularized_solve_prototype(
+    operator_package: NonSingularOperatorPrototype,
+    rhs_package: BoundaryRHSPackage,
+    epsilon: float = 1.0e-6,
+) -> RegularizedSolvePrototype:
+    """
+    Build and solve the tiny regularized system:
+        (A + epsilon * I) x = rhs
+
+    using the non‑singular operator prototype and the boundary RHS package.
+    All inputs must match the ben004 benchmark and refer to the same panel subset.
+
+    Parameters
+    ----------
+    operator_package : NonSingularOperatorPrototype
+        The BEM‑003 operator prototype containing the off‑diagonal matrix.
+    rhs_package : BoundaryRHSPackage
+        The BEM‑004B RHS package containing the boundary vector.
+    epsilon : float
+        Artificial regularization diagonal value (must be > 0 and finite).
+
+    Returns
+    -------
+    RegularizedSolvePrototype
+        Solved algebraic unknown vector with full metadata.
+    """
+    # --- input validation ---
+    if operator_package.benchmark_id != "ben004_rigid_sphere_scattering_registered":
+        raise ValueError("Operator benchmark id must be ben004_rigid_sphere_scattering_registered")
+    if rhs_package.benchmark_id != "ben004_rigid_sphere_scattering_registered":
+        raise ValueError("RHS benchmark id must be ben004_rigid_sphere_scattering_registered")
+    if operator_package.benchmark_id != rhs_package.benchmark_id:
+        raise ValueError("Benchmark ids of operator and RHS packages differ")
+
+    # selected indices consistency
+    op_idx = sorted(operator_package.selected_panel_indices)
+    rhs_idx = sorted(rhs_package.selected_panel_indices)
+    if op_idx != rhs_idx:
+        raise ValueError(
+            f"Mismatched selected panel indices: operator {op_idx}, RHS {rhs_idx}"
+        )
+
+    n = len(op_idx)
+    if not (3 <= n <= 6):
+        raise ValueError("Selected panel count must be between 3 and 6")
+
+    # matrix dimension must match RHS length
+    if len(operator_package.matrix) != n or any(len(row) != n for row in operator_package.matrix):
+        raise ValueError("Operator matrix dimensions do not match selected indices")
+    if len(rhs_package.rhs_values) != n:
+        raise ValueError("RHS length does not match selected indices")
+
+    if not math.isfinite(epsilon) or epsilon <= 0.0:
+        raise ValueError("epsilon must be finite and positive")
+
+    # --- regularize and solve ---
+    A = [row[:] for row in operator_package.matrix]  # deep copy
+    for i in range(n):
+        A[i][i] += epsilon
+
+    b = list(rhs_package.rhs_values)
+
+    x = _complex_gaussian_elimination(A, b)
+
+    # --- deterministic package ID ---
+    id_lines = []
+    id_lines.append("solve_stage=bem004c_regularized_solve_prototype")
+    id_lines.append(f"benchmark_id={operator_package.benchmark_id}")
+    id_lines.append(f"op_package_id={operator_package.deterministic_package_id}")
+    id_lines.append(f"rhs_package_id={rhs_package.deterministic_package_id}")
+    id_lines.append(f"epsilon={epsilon:.15e}")
+    id_lines.append(f"selected_indices={op_idx}")
+    for val in x:
+        id_lines.append(f"sol=({val.real:.15e},{val.imag:.15e})")
+    hash_input = "\n".join(id_lines)
+    package_id = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    return RegularizedSolvePrototype(
+        solve_stage="bem004c_regularized_solve_prototype",
+        benchmark_id=operator_package.benchmark_id,
+        prototype_only=True,
+        regularized_solve_performed=True,
+        regularization_epsilon=epsilon,
+        regularization_type="artificial_diagonal_prototype",
+        regularization_physical=False,
+        singular_integral_approximation=False,
+        full_sphere_solve=False,
+        boundary_integral_correctness_claim=False,
+        scattered_pressure_computed=False,
+        observer_pressure_computed=False,
+        reference_matching_performed=False,
+        tolerance_policy_applied=False,
+        spl_computed=False,
+        directivity_computed=False,
+        impedance_computed=False,
+        solution=x,
         deterministic_package_id=package_id,
     )
