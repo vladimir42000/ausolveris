@@ -588,3 +588,138 @@ def regularized_solve_prototype(
         solution=x,
         deterministic_package_id=package_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# BEM‑004D : prototype residual report (no analytical reference)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PrototypeResidualReport:
+    """Residuals of the regularized prototype solve – no scattering comparison."""
+    # stage metadata
+    report_stage: str
+    benchmark_id: str
+    prototype_only: bool
+
+    # tolerance split
+    residual_tolerance_applied: bool
+    analytical_reference_comparison_performed: bool
+    pressure_tolerance_applied: bool
+
+    # residual quantities
+    residual_vector: List[complex]
+    max_abs_residual: float
+    relative_l2_residual: float
+
+    # copies from source packages for traceability
+    solve_package_id: str
+    operator_package_id: str
+    rhs_package_id: str
+    epsilon_used: float
+
+    # explicit exclusion markers
+    scattered_pressure_computed: bool
+    observer_pressure_computed: bool
+    analytical_pressure_evaluated: bool
+    reference_matching_performed: bool
+    spl_computed: bool
+    directivity_computed: bool
+    impedance_computed: bool
+
+    deterministic_package_id: str
+
+
+def compute_prototype_residual(
+    solve_package: RegularizedSolvePrototype,
+    operator_package: NonSingularOperatorPrototype,
+    rhs_package: BoundaryRHSPackage,
+) -> PrototypeResidualReport:
+    """
+    Compute the algebraic residual of the regularized prototype solve:
+        r = (A + ε·I) x – rhs
+
+    Returns a deterministic report with max‑abs and relative‑L2 residual norms.
+    No analytical pressure or scattering comparison is performed.
+    """
+    # input validation
+    if solve_package.benchmark_id != "ben004_rigid_sphere_scattering_registered":
+        raise ValueError("Solve package must be ben004_rigid_sphere_scattering_registered")
+    if operator_package.benchmark_id != "ben004_rigid_sphere_scattering_registered":
+        raise ValueError("Operator package must be ben004_rigid_sphere_scattering_registered")
+    if rhs_package.benchmark_id != "ben004_rigid_sphere_scattering_registered":
+        raise ValueError("RHS package must be ben004_rigid_sphere_scattering_registered")
+
+    # Dimension checks
+    n = len(solve_package.solution)
+    if len(operator_package.matrix) != n or any(len(row) != n for row in operator_package.matrix):
+        raise ValueError("Operator matrix dimensions do not match solution length")
+    if len(rhs_package.rhs_values) != n:
+        raise ValueError("RHS length does not match solution length")
+
+    epsilon = solve_package.regularization_epsilon
+    if epsilon <= 0.0 or not math.isfinite(epsilon):
+        raise ValueError("Regularization epsilon must be positive and finite")
+
+    # reconstruct regularized matrix
+    A = [row[:] for row in operator_package.matrix]  # copy
+    for i in range(n):
+        A[i][i] += epsilon
+
+    x = solve_package.solution
+    rhs = rhs_package.rhs_values
+
+    # residual vector
+    r = []
+    for i in range(n):
+        s = sum(A[i][j] * x[j] for j in range(n))
+        r.append(s - rhs[i])
+
+    # norms
+    max_abs = max(abs(v) for v in r)
+    rhs_l2 = math.sqrt(sum(abs(v)**2 for v in rhs))
+    if rhs_l2 == 0.0:
+        relative_l2 = 0.0
+    else:
+        residual_l2 = math.sqrt(sum(abs(v)**2 for v in r))
+        relative_l2 = residual_l2 / rhs_l2
+
+    # deterministic package ID
+    id_lines = []
+    id_lines.append("report_stage=bem004d_prototype_residual_report")
+    id_lines.append(f"benchmark_id={solve_package.benchmark_id}")
+    id_lines.append(f"solve_package_id={solve_package.deterministic_package_id}")
+    id_lines.append(f"operator_package_id={operator_package.deterministic_package_id}")
+    id_lines.append(f"rhs_package_id={rhs_package.deterministic_package_id}")
+    id_lines.append(f"epsilon={epsilon:.15e}")
+    for val in r:
+        id_lines.append(f"res=({val.real:.15e},{val.imag:.15e})")
+    id_lines.append(f"max_abs={max_abs:.15e}")
+    id_lines.append(f"relative_l2={relative_l2:.15e}")
+    hash_input = "\n".join(id_lines)
+    package_id = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    return PrototypeResidualReport(
+        report_stage="bem004d_prototype_residual_report",
+        benchmark_id=solve_package.benchmark_id,
+        prototype_only=True,
+        residual_tolerance_applied=True,
+        analytical_reference_comparison_performed=False,
+        pressure_tolerance_applied=False,
+        residual_vector=r,
+        max_abs_residual=max_abs,
+        relative_l2_residual=relative_l2,
+        solve_package_id=solve_package.deterministic_package_id,
+        operator_package_id=operator_package.deterministic_package_id,
+        rhs_package_id=rhs_package.deterministic_package_id,
+        epsilon_used=epsilon,
+        scattered_pressure_computed=False,
+        observer_pressure_computed=False,
+        analytical_pressure_evaluated=False,
+        reference_matching_performed=False,
+        spl_computed=False,
+        directivity_computed=False,
+        impedance_computed=False,
+        deterministic_package_id=package_id,
+    )
+
