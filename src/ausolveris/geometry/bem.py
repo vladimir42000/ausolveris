@@ -723,3 +723,116 @@ def compute_prototype_residual(
         deterministic_package_id=package_id,
     )
 
+
+# ---------------------------------------------------------------------------
+# BEM‑004E : exterior observer scaffold and domain validation
+# ---------------------------------------------------------------------------
+from dataclasses import dataclass, field
+from typing import List, Tuple
+import math
+import hashlib
+
+class InvalidObserverDomainError(ValueError):
+    """Raised when an observer point lies on or inside the rigid sphere."""
+    pass
+
+@dataclass
+class DomainValidation:
+    interior_points_rejected: bool = True
+    boundary_points_rejected: bool = True
+
+@dataclass
+class ExteriorObserverScaffold:
+    scaffold_stage: str
+    benchmark_id: str
+    sphere_radius: float
+    domain: str
+    observer_positions: List[Tuple[float, float, float]]
+    observer_count: int
+    domain_validation: DomainValidation
+    analytical_evaluator_implemented: bool
+    analytical_pressure_evaluated: bool
+    observer_pressure_computed: bool
+    scattered_pressure_computed: bool
+    total_pressure_computed: bool
+    boundary_to_observer_operator_assembled: bool
+    reference_matching_performed: bool
+    spl_computed: bool
+    directivity_computed: bool
+    impedance_computed: bool
+    deterministic_package_id: str
+
+
+def _validate_observer_domain(
+    positions: List[Tuple[float, float, float]],
+    sphere_radius: float
+) -> None:
+    """Raise InvalidObserverDomainError if any point is on or inside the sphere."""
+    for x, y, z in positions:
+        r = math.sqrt(x*x + y*y + z*z)
+        if r <= sphere_radius:
+            raise InvalidObserverDomainError(
+                f"Observer ({x}, {y}, {z}) at distance {r} is on or inside the sphere "
+                f"(radius {sphere_radius}). Only exterior domain allowed."
+            )
+
+
+def build_exterior_observer_scaffold(
+    benchmark_id: str,
+    sphere_radius: float,
+    observer_positions: List[Tuple[float, float, float]],
+) -> ExteriorObserverScaffold:
+    """
+    Create a deterministic exterior observer scaffold.
+
+    All points must lie strictly outside the rigid sphere (r > sphere_radius).
+    """
+    # --- input validation ---
+    if benchmark_id != "ben004_rigid_sphere_scattering_registered":
+        raise ValueError("Only ben004_rigid_sphere_scattering_registered is supported")
+    if not math.isfinite(sphere_radius) or sphere_radius <= 0.0:
+        raise ValueError("sphere_radius must be finite and positive")
+    if not observer_positions:
+        raise ValueError("observer_positions must not be empty")
+    for i, (x, y, z) in enumerate(observer_positions):
+        if not all(math.isfinite(v) for v in (x, y, z)):
+            raise ValueError(f"Observer position {i} contains non‑finite coordinates")
+
+    # domain check
+    _validate_observer_domain(observer_positions, sphere_radius)
+
+    # --- deterministic package ID ---
+    id_lines = []
+    id_lines.append("scaffold_stage=bem004e_exterior_observer_scaffold")
+    id_lines.append(f"benchmark_id={benchmark_id}")
+    id_lines.append(f"sphere_radius={sphere_radius:.15e}")
+    id_lines.append("domain=exterior_domain")
+    # positions in caller order, preserved
+    for x, y, z in observer_positions:
+        id_lines.append(f"({x:.15e},{y:.15e},{z:.15e})")
+    hash_input = "\n".join(id_lines)
+    package_id = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    return ExteriorObserverScaffold(
+        scaffold_stage="bem004e_exterior_observer_scaffold",
+        benchmark_id=benchmark_id,
+        sphere_radius=sphere_radius,
+        domain="exterior_domain",
+        observer_positions=observer_positions,
+        observer_count=len(observer_positions),
+        domain_validation=DomainValidation(
+            interior_points_rejected=True,
+            boundary_points_rejected=True,
+        ),
+        analytical_evaluator_implemented=False,
+        analytical_pressure_evaluated=False,
+        observer_pressure_computed=False,
+        scattered_pressure_computed=False,
+        total_pressure_computed=False,
+        boundary_to_observer_operator_assembled=False,
+        reference_matching_performed=False,
+        spl_computed=False,
+        directivity_computed=False,
+        impedance_computed=False,
+        deterministic_package_id=package_id,
+    )
