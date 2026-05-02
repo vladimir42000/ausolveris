@@ -1,3 +1,210 @@
+
+# ============================================================================
+# BEM-004F: Analytical rigid-sphere reference evaluator
+# ============================================================================
+import math
+import hashlib
+from typing import Dict, Any, Optional
+import numpy as np
+
+def _spherical_jn(n: int, z: complex) -> complex:
+    """Spherical Bessel j_n(z) for n=0..6, stable upward recurrence."""
+    if n == 0:
+        return np.sin(z) / z
+    if n == 1:
+        return np.sin(z) / z**2 - np.cos(z) / z
+    j_prev2 = _spherical_jn(0, z)
+    j_prev1 = _spherical_jn(1, z)
+    for m in range(1, n):
+        j_next = (2*m + 1) / z * j_prev1 - j_prev2
+        j_prev2, j_prev1 = j_prev1, j_next
+    return j_prev1
+
+def _spherical_yn(n: int, z: complex) -> complex:
+    """Spherical Neumann y_n(z) for n=0..6."""
+    if n == 0:
+        return -np.cos(z) / z
+    if n == 1:
+        return -np.cos(z) / z**2 - np.sin(z) / z
+    y_prev2 = _spherical_yn(0, z)
+    y_prev1 = _spherical_yn(1, z)
+    for m in range(1, n):
+        y_next = (2*m + 1) / z * y_prev1 - y_prev2
+        y_prev2, y_prev1 = y_prev1, y_next
+    return y_prev1
+
+def _spherical_h1(n: int, z: complex) -> complex:
+    """Outgoing spherical Hankel h_n^{(1)}(z) = j_n(z) + i y_n(z)."""
+    return _spherical_jn(n, z) + 1j * _spherical_yn(n, z)
+
+def _spherical_jn_deriv(n: int, z: complex) -> complex:
+    """Derivative j_n'(z) = j_{n-1}(z) - (n+1)/z * j_n(z)."""
+    if n == 0:
+        # j_0'(z) = -sin(z)/z^2 + cos(z)/z
+        return np.cos(z)/z - np.sin(z)/z**2
+    j_n = _spherical_jn(n, z)
+    j_nm1 = _spherical_jn(n-1, z)
+    return j_nm1 - (n+1)/z * j_n
+
+def _spherical_h1_deriv(n: int, z: complex) -> complex:
+    """Derivative h_n^{(1)'}(z)."""
+    if n == 0:
+        # h_0'(z) = j_0'(z) + i y_0'(z)
+        j0p = np.cos(z)/z - np.sin(z)/z**2
+        y0p = np.sin(z)/z + np.cos(z)/z**2   # y_0'(z) = sin(z)/z + cos(z)/z^2
+        return j0p + 1j * y0p
+    h_n = _spherical_h1(n, z)
+    h_nm1 = _spherical_h1(n-1, z)
+    return h_nm1 - (n+1)/z * h_n
+
+def _legendre_p(n: int, x: float) -> float:
+    """Legendre polynomial P_n(x) for n=0..6 using recurrence."""
+    if n == 0:
+        return 1.0
+    if n == 1:
+        return x
+    p_prev2 = 1.0
+    p_prev1 = x
+    for m in range(1, n):
+        p_next = ((2*m + 1) * x * p_prev1 - m * p_prev2) / (m + 1)
+        p_prev2, p_prev1 = p_prev1, p_next
+    return p_prev1
+
+class AnalyticalRigidSphereReferenceEvaluator:
+    """
+    BEM-004F: Bounded analytical reference evaluator for sound-hard sphere.
+    Uses fixed series truncation n_max = 6, no adaptive logic.
+    """
+
+    def __init__(self, scaffold):
+        """
+        Parameters
+        ----------
+        scaffold : object
+            Must provide attributes:
+            - observers : ndarray, shape (N,3)
+            - k : float, wavenumber
+            - a : float, sphere radius
+            - amplitude : complex, incident amplitude A
+            - direction : ndarray, shape (3,), unit vector
+        """
+        self.scaffold = scaffold
+        self._validate_scaffold()
+        self.n_max = 6
+        self.adaptive_truncation_used = False
+        self.convergence_seeking_used = False
+        self.reference_matching_performed = False
+        self.tolerance_policy_applied = False
+        self.bem_solution_consumed = False
+        self.observer_reconstruction_performed = False
+        self.spl_computed = False
+        self.directivity_computed = False
+        self.impedance_computed = False
+
+    def _validate_scaffold(self):
+        s = self.scaffold
+        required = ['observers', 'k', 'a', 'amplitude', 'direction']
+        for attr in required:
+            if not hasattr(s, attr):
+                raise ValueError(f"Scaffold missing required attribute: {attr}")
+        if not isinstance(s.observers, np.ndarray) or s.observers.shape[1] != 3:
+            raise ValueError("observers must be (N,3) numpy array")
+        if s.k <= 0:
+            raise ValueError("k must be positive")
+        if s.a <= 0:
+            raise ValueError("a must be positive")
+        if np.abs(s.amplitude) == 0:
+            raise ValueError("amplitude cannot be zero")
+        if not np.allclose(np.linalg.norm(s.direction), 1.0):
+            raise ValueError("direction must be unit vector")
+
+    def compute_incident(self) -> np.ndarray:
+        """Return incident pressure at all observers: A exp(i k d·x)."""
+        s = self.scaffold
+        dots = np.dot(s.observers, s.direction)
+        return s.amplitude * np.exp(1j * s.k * dots)
+
+    def compute_scattered(self) -> np.ndarray:
+        """
+        Compute scattered pressure using rigid-sphere series,
+        fixed n_max = 6.
+        """
+        s = self.scaffold
+        N = s.observers.shape[0]
+        scattered = np.zeros(N, dtype=complex)
+
+        # Pre-compute coefficients independent of observer
+        ka = s.k * s.a
+        # n from 0 to n_max
+        coeffs = np.zeros(self.n_max + 1, dtype=complex)
+        for n in range(self.n_max + 1):
+            jn_ka = _spherical_jn(n, ka)
+            hn_ka = _spherical_h1(n, ka)
+            jn_deriv = _spherical_jn_deriv(n, ka)
+            hn_deriv = _spherical_h1_deriv(n, ka)
+            ratio = jn_deriv / hn_deriv
+            i_pow_n = (1j) ** n
+            coeffs[n] = -s.amplitude * (2*n + 1) * i_pow_n * ratio
+
+        # Evaluate for each observer
+        for i, obs in enumerate(s.observers):
+            r = np.linalg.norm(obs)
+            if r <= s.a:
+                # observer inside/on sphere → not defined for scattered reference
+                raise ValueError(f"Observer at r={r} <= a={s.a} is not exterior")
+            cos_theta = np.dot(obs, s.direction) / r
+            total = 0.0j
+            for n in range(self.n_max + 1):
+                hn_kr = _spherical_h1(n, s.k * r)
+                Pn = _legendre_p(n, cos_theta)
+                total += coeffs[n] * hn_kr * Pn
+            scattered[i] = total
+        return scattered
+
+    def compute_total(self) -> np.ndarray:
+        """Total = incident + scattered."""
+        return self.compute_incident() + self.compute_scattered()
+
+    def get_package(self) -> Dict[str, Any]:
+        """
+        Return analytical reference package with metadata and
+        deterministic SHA-256 hash of the results.
+        """
+        p_inc = self.compute_incident()
+        p_scat = self.compute_scattered()
+        p_total = p_inc + p_scat
+
+        # Create deterministic hash from flattened real/imag parts and parameters
+        data_to_hash = np.concatenate([
+            p_inc.view(float), p_scat.view(float), p_total.view(float),
+            np.array([self.scaffold.k, self.scaffold.a, self.scaffold.amplitude.real,
+                      self.scaffold.amplitude.imag], dtype=float)
+        ])
+        sha256 = hashlib.sha256(data_to_hash.tobytes()).hexdigest()
+
+        return {
+            "reference_stage": "bem004f_analytical_rigid_sphere_reference",
+            "benchmark_id": "ben004_rigid_sphere_scattering_registered",
+            "analytical_evaluator_implemented": True,
+            "analytical_pressure_evaluated": True,
+            "analytical_incident_pressure_computed": True,
+            "analytical_scattered_pressure_computed": True,
+            "analytical_total_pressure_computed": True,
+            "series_truncation_n_max": self.n_max,
+            "adaptive_truncation_used": self.adaptive_truncation_used,
+            "convergence_seeking_used": self.convergence_seeking_used,
+            "reference_matching_performed": self.reference_matching_performed,
+            "tolerance_policy_applied": self.tolerance_policy_applied,
+            "bem_solution_consumed": self.bem_solution_consumed,
+            "observer_reconstruction_performed": self.observer_reconstruction_performed,
+            "spl_computed": self.spl_computed,
+            "directivity_computed": self.directivity_computed,
+            "impedance_computed": self.impedance_computed,
+            "incident_pressure": p_inc,
+            "scattered_pressure": p_scat,
+            "total_pressure": p_total,
+            "package_sha256": sha256,
+        }
 """
 BEM‑001 : Helmholtz Green‑function utility (scalar, free-space).
 BEM‑003 : non‑singular operator prototype (off‑diagonal, controlled subset).
@@ -836,3 +1043,234 @@ def build_exterior_observer_scaffold(
         impedance_computed=False,
         deterministic_package_id=package_id,
     )
+# ============================================================================
+# BEM-004F: Analytical rigid-sphere reference evaluator
+# ============================================================================
+
+import math
+import cmath
+import hashlib
+import json
+from typing import List, Tuple, Union, Dict, Any
+
+
+# ----------------------------------------------------------------------------
+# Spherical Bessel / Hankel and Legendre utilities (pure Python)
+# ----------------------------------------------------------------------------
+
+def spherical_bessel_j(n: int, z: complex) -> complex:
+    """Spherical Bessel j_n(z) for n <= 6."""
+    if n == 0:
+        return cmath.sin(z) / z if z != 0 else 1.0
+    if n == 1:
+        return cmath.sin(z) / (z * z) - cmath.cos(z) / z
+    # upward recurrence
+    j_prev2 = spherical_bessel_j(0, z)
+    j_prev1 = spherical_bessel_j(1, z)
+    for m in range(1, n):
+        j_next = (2 * m + 1) / z * j_prev1 - j_prev2
+        j_prev2, j_prev1 = j_prev1, j_next
+    return j_prev1
+
+
+def spherical_bessel_derivative(n: int, z: complex, jn: complex = None) -> complex:
+    """Derivative j_n'(z)."""
+    if jn is None:
+        jn = spherical_bessel_j(n, z)
+    if n == 0:
+        j1 = spherical_bessel_j(1, z)
+        return -j1
+    j_prev = spherical_bessel_j(n - 1, z) if n - 1 >= 0 else 0
+    j_next = spherical_bessel_j(n + 1, z)
+    return (n * j_prev - (n + 1) * j_next) / (2 * n + 1)
+
+
+def spherical_hankel_h1(n: int, z: complex) -> complex:
+    """Spherical Hankel of first kind h_n^(1)(z)."""
+    if n == 0:
+        return -1j * cmath.exp(1j * z) / z if z != 0 else complex('inf')
+    if n == 1:
+        return -cmath.exp(1j * z) / z * (1 + 1j / z)
+    # upward recurrence
+    h_prev2 = spherical_hankel_h1(0, z)
+    h_prev1 = spherical_hankel_h1(1, z)
+    for m in range(1, n):
+        h_next = (2 * m + 1) / z * h_prev1 - h_prev2
+        h_prev2, h_prev1 = h_prev1, h_next
+    return h_prev1
+
+
+def spherical_hankel_derivative(n: int, z: complex, hn: complex = None) -> complex:
+    """Derivative h_n^(1)'(z)."""
+    if hn is None:
+        hn = spherical_hankel_h1(n, z)
+    if n == 0:
+        h1 = spherical_hankel_h1(1, z)
+        return -h1
+    h_prev = spherical_hankel_h1(n - 1, z) if n - 1 >= 0 else 0
+    h_next = spherical_hankel_h1(n + 1, z)
+    return (n * h_prev - (n + 1) * h_next) / (2 * n + 1)
+
+
+def legendre_p(n: int, x: float) -> float:
+    """Legendre polynomial P_n(x)."""
+    if n == 0:
+        return 1.0
+    if n == 1:
+        return x
+    p_prev2 = 1.0
+    p_prev1 = x
+    for m in range(1, n):
+        p_next = ((2 * m + 1) * x * p_prev1 - m * p_prev2) / (m + 1)
+        p_prev2, p_prev1 = p_prev1, p_next
+    return p_prev1
+
+
+# ----------------------------------------------------------------------------
+# Analytical evaluator for rigid sphere scattering
+# ----------------------------------------------------------------------------
+
+class AnalyticalRigidSphereReferenceEvaluator:
+    """
+    Bounded analytical evaluator for plane‑wave scattering by a sound‑hard sphere.
+    Uses fixed n_max = 6, no adaptive truncation, no BEM consumption.
+    """
+
+    def __init__(self, sphere_radius: float, k: complex, amplitude: complex,
+                 direction: Tuple[float, float, float], n_max: int = 6):
+        """
+        Args:
+            sphere_radius: radius a of the sphere
+            k: wavenumber (complex allowed, typically real positive)
+            amplitude: incident plane‑wave amplitude A
+            direction: incident direction vector (will be normalized)
+            n_max: series truncation (fixed to 6 by project policy)
+        """
+        self.sphere_radius = sphere_radius
+        self.k = k
+        self.amplitude = amplitude
+        norm = math.sqrt(sum(d * d for d in direction))
+        if norm == 0:
+            raise ValueError("Direction vector must be non-zero")
+        self.direction = tuple(d / norm for d in direction)
+        if n_max != 6:
+            # Policy enforces n_max = 6, but we still allow construction.
+            # The metadata will report the actual value.
+            pass
+        self.n_max = n_max
+        self._coeffs = self._compute_coefficients()
+
+    def _compute_coefficients(self) -> List[complex]:
+        """Precompute A_n = - (j_n'(ka)/h_n^{(1)'}(ka)) * (2n+1) i^n."""
+        ka = self.k * self.sphere_radius
+        coeffs = []
+        for n in range(0, self.n_max + 1):
+            jn = spherical_bessel_j(n, ka)
+            jn_prime = spherical_bessel_derivative(n, ka, jn)
+            hn = spherical_hankel_h1(n, ka)
+            hn_prime = spherical_hankel_derivative(n, ka, hn)
+            factor = -(jn_prime / hn_prime) * (2 * n + 1) * (1j) ** n
+            coeffs.append(factor)
+        return coeffs
+
+    def evaluate(self, observer_points) -> Dict[str, Any]:
+        """
+        Compute analytical pressures at exterior observer points.
+
+        Args:
+            observer_points: either an object with a `points` attribute (each point
+                             a (x,y,z) triple) or an iterable of (x,y,z) triples.
+                             All points must lie outside the sphere (r > radius).
+
+        Returns:
+            Dictionary containing:
+                - incident_pressure: list of complex values
+                - scattered_pressure: list of complex values
+                - total_pressure: list of complex values
+                - metadata: dict with flags required by the milestone
+                - package_id: deterministic SHA‑256 hex digest
+        """
+        # Accept BEM-004E exterior observer scaffold (points attribute) or raw list
+        if hasattr(observer_points, 'points'):
+            points = observer_points.points
+        else:
+            points = observer_points
+
+        points_list = []
+        for idx, p in enumerate(points):
+            if len(p) != 3:
+                raise ValueError(f"Observer point {idx} is not (x,y,z) triple")
+            x, y, z = p
+            r = math.sqrt(x * x + y * y + z * z)
+            if r <= self.sphere_radius:
+                raise ValueError(f"Observer at {p} is not exterior (r <= sphere_radius)")
+            points_list.append((x, y, z))
+
+        n_pts = len(points_list)
+        incident = [0j] * n_pts
+        scattered = [0j] * n_pts
+        total = [0j] * n_pts
+
+        for idx, (x, y, z) in enumerate(points_list):
+            r = math.sqrt(x * x + y * y + z * z)
+            # Unit vector from origin to observer
+            rx, ry, rz = x / r, y / r, z / r
+            cos_theta = (self.direction[0] * rx +
+                         self.direction[1] * ry +
+                         self.direction[2] * rz)
+
+            # Incident field: A exp(i k d·x)
+            dot_d_x = (self.direction[0] * x +
+                       self.direction[1] * y +
+                       self.direction[2] * z)
+            p_inc = self.amplitude * cmath.exp(1j * self.k * dot_d_x)
+            incident[idx] = p_inc
+
+            # Scattered field series
+            kr = self.k * r
+            p_scat = 0j
+            for n in range(0, self.n_max + 1):
+                hn = spherical_hankel_h1(n, kr)
+                pn = legendre_p(n, cos_theta)
+                p_scat += self.amplitude * self._coeffs[n] * hn * pn
+            scattered[idx] = p_scat
+            total[idx] = p_inc + p_scat
+
+        result = {
+            "incident_pressure": incident,
+            "scattered_pressure": scattered,
+            "total_pressure": total,
+            "metadata": {
+                "reference_stage": "bem004f_analytical_rigid_sphere_reference",
+                "benchmark_id": "ben004_rigid_sphere_scattering_registered",
+                "analytical_evaluator_implemented": True,
+                "analytical_pressure_evaluated": True,
+                "analytical_incident_pressure_computed": True,
+                "analytical_scattered_pressure_computed": True,
+                "analytical_total_pressure_computed": True,
+                "series_truncation_n_max": self.n_max,
+                "adaptive_truncation_used": False,
+                "convergence_seeking_used": False,
+                "reference_matching_performed": False,
+                "tolerance_policy_applied": False,
+                "bem_solution_consumed": False,
+                "observer_reconstruction_performed": False,
+                "boundary_to_observer_operator_assembled": False,
+                "spl_computed": False,
+                "directivity_computed": False,
+                "impedance_computed": False
+            }
+        }
+        result["package_id"] = self._compute_package_id(result)
+        return result
+
+    def _compute_package_id(self, result: Dict) -> str:
+        """Deterministic SHA‑256 of the pressure arrays and metadata."""
+        data = {
+            "incident": [[z.real, z.imag] for z in result["incident_pressure"]],
+            "scattered": [[z.real, z.imag] for z in result["scattered_pressure"]],
+            "total": [[z.real, z.imag] for z in result["total_pressure"]],
+            "metadata": result["metadata"]
+        }
+        json_str = json.dumps(data, sort_keys=True, separators=(',', ':'))
+        return hashlib.sha256(json_str.encode()).hexdigest()
