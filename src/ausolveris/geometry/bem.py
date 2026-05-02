@@ -1274,3 +1274,95 @@ class AnalyticalRigidSphereReferenceEvaluator:
         }
         json_str = json.dumps(data, sort_keys=True, separators=(',', ':'))
         return hashlib.sha256(json_str.encode()).hexdigest()
+
+# ============================================================================
+# BEM-005A: Observer reconstruction scaffold (non-physical)
+# ============================================================================
+
+import hashlib
+import json
+from typing import Any, Dict, List, Tuple, Union
+
+
+class ObserverReconstructionScaffold:
+    """
+    Non-physical scaffold for boundary-to-observer reconstruction.
+    Does not assemble H operator or perform actual reconstruction.
+    """
+
+    def __init__(self, observer_scaffold, boundary_solution_stub):
+        """
+        Args:
+            observer_scaffold: BEM-004E exterior observer scaffold (with .points)
+            boundary_solution_stub: stub package containing boundary data (any dict with required keys? but not used)
+        """
+        # Validate observer scaffold
+        if not hasattr(observer_scaffold, 'points'):
+            raise ValueError("Observer scaffold must have 'points' attribute")
+        points = observer_scaffold.points
+        if not isinstance(points, (list, tuple)) or len(points) == 0:
+            raise ValueError("Observer scaffold points must be non-empty list/tuple")
+        for i, p in enumerate(points):
+            if len(p) != 3:
+                raise ValueError(f"Point {i} is not (x,y,z) triple")
+        self.observer_points = points
+
+        # Validate boundary solution stub (minimally, must be a dict with a key 'boundary_data_present')
+        # We'll just check it's a dict (stub can be anything, but for deterministic ID we need to incorporate it)
+        if not isinstance(boundary_solution_stub, dict):
+            raise ValueError("Boundary solution stub must be a dictionary")
+        self.boundary_stub = boundary_solution_stub
+
+        # Define H descriptor (stub)
+        self.H = {
+            "operator_type": "boundary_to_observer_stub",
+            "assembled": False,
+            "singular_quadrature_used": False
+        }
+
+    def reconstruct(self) -> Dict[str, Any]:
+        """
+        Return deterministic scaffold package with placeholder pressure arrays.
+        Does NOT perform physical reconstruction.
+        """
+        n = len(self.observer_points)
+        # Placeholder pressures: zero complex numbers (non-physical)
+        placeholder = [0j] * n
+
+        result = {
+            "reconstructed_incident_pressure": placeholder.copy(),
+            "reconstructed_scattered_pressure": placeholder.copy(),
+            "reconstructed_total_pressure": placeholder.copy(),
+            "H_descriptor": self.H,
+            "metadata": {
+                "reconstruction_stage": "bem005a_observer_reconstruction_scaffold",
+                "benchmark_id": "ben004_rigid_sphere_scattering_registered",
+                "reconstruction_scaffold_assembled": True,
+                "boundary_to_observer_operator_assembled": False,
+                "reconstruction_performed": False,
+                "analytical_reference_comparison_performed": False,
+                "tolerance_policy_applied": False,
+                "singular_quadrature_implemented": False,
+                "spl_computed": False,
+                "directivity_computed": False,
+                "impedance_computed": False,
+                "non_physical": True
+            }
+        }
+        # Add package ID
+        result["package_id"] = self._compute_package_id(result)
+        return result
+
+    def _compute_package_id(self, result: Dict) -> str:
+        """Deterministic SHA-256 of the result structure (excluding package_id itself)."""
+        data = {
+            "observer_points": self.observer_points,
+            "boundary_stub": self.boundary_stub,
+            "reconstructed_incident_pressure": [[z.real, z.imag] for z in result["reconstructed_incident_pressure"]],
+            "reconstructed_scattered_pressure": [[z.real, z.imag] for z in result["reconstructed_scattered_pressure"]],
+            "reconstructed_total_pressure": [[z.real, z.imag] for z in result["reconstructed_total_pressure"]],
+            "H_descriptor": self.H,
+            "metadata": result["metadata"]
+        }
+        json_str = json.dumps(data, sort_keys=True, separators=(',', ':'))
+        return hashlib.sha256(json_str.encode()).hexdigest()
