@@ -1366,3 +1366,170 @@ class ObserverReconstructionScaffold:
         }
         json_str = json.dumps(data, sort_keys=True, separators=(',', ':'))
         return hashlib.sha256(json_str.encode()).hexdigest()
+# ============================================================================
+# BEM-005B: Boundary-to-observer reconstruction execution gate
+# ============================================================================
+
+import hashlib
+import json
+from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
+
+
+@dataclass
+class ReconstructionGateRequest:
+    """Validated request for the BEM-005B reconstruction execution gate."""
+    gate_stage: str
+    benchmark_id: str
+    request_validated: bool
+    boundary_solution_package_id: str
+    observer_scaffold_package_id: str
+    observer_count: int
+    observer_positions: List[Tuple[float, float, float]]
+
+
+@dataclass
+class ReconstructionGateResult:
+    """Non-physical gated result for BEM-005B."""
+    reconstruction_stage: str
+    benchmark_id: str
+    request_validated: bool
+    execution_gated: bool
+    physical_h_matrix_assembled: bool
+    physical_reconstruction_performed: bool
+    analytical_reference_comparison_performed: bool
+    tolerance_policy_applied: bool
+    singular_quadrature_implemented: bool
+    spl_computed: bool
+    directivity_computed: bool
+    impedance_computed: bool
+    non_physical: bool
+    reconstructed_incident_pressure: List[complex]
+    reconstructed_scattered_pressure: List[complex]
+    reconstructed_total_pressure: List[complex]
+    deterministic_package_id: str
+
+
+def build_reconstruction_gate_request(
+    boundary_solution: "RegularizedSolvePrototype",
+    observer_scaffold: "ExteriorObserverScaffold",
+    reconstruction_scaffold: "ObserverReconstructionScaffold",
+) -> ReconstructionGateRequest:
+    """
+    Validate structural consistency of the three input packages and return a
+    ReconstructionGateRequest.  Raises ValueError on any structural failure.
+    request_validated=True appears only after all checks pass.
+
+    Parameters
+    ----------
+    boundary_solution : RegularizedSolvePrototype
+        BEM-004C prototype boundary solution package.
+    observer_scaffold : ExteriorObserverScaffold
+        BEM-004E exterior observer scaffold.
+    reconstruction_scaffold : ObserverReconstructionScaffold
+        BEM-005A observer reconstruction scaffold.
+    """
+    # --- type guards (controlled ValueError, not accidental AttributeError) ---
+    if not isinstance(boundary_solution, RegularizedSolvePrototype):
+        raise ValueError(
+            "boundary_solution must be a RegularizedSolvePrototype instance"
+        )
+    if not isinstance(observer_scaffold, ExteriorObserverScaffold):
+        raise ValueError(
+            "observer_scaffold must be an ExteriorObserverScaffold instance"
+        )
+    if not isinstance(reconstruction_scaffold, ObserverReconstructionScaffold):
+        raise ValueError(
+            "reconstruction_scaffold must be an ObserverReconstructionScaffold instance"
+        )
+
+    # --- benchmark ID checks ---
+    _BID = "ben004_rigid_sphere_scattering_registered"
+    if boundary_solution.benchmark_id != _BID:
+        raise ValueError(
+            f"boundary_solution.benchmark_id must be {_BID!r}; "
+            f"got {boundary_solution.benchmark_id!r}"
+        )
+    if observer_scaffold.benchmark_id != _BID:
+        raise ValueError(
+            f"observer_scaffold.benchmark_id must be {_BID!r}; "
+            f"got {observer_scaffold.benchmark_id!r}"
+        )
+
+    # --- observer position consistency ---
+    # ExteriorObserverScaffold stores: observer_positions (List[Tuple])
+    # ObserverReconstructionScaffold stores: observer_points (List, set by __init__)
+    obs_pos = list(observer_scaffold.observer_positions)
+    rec_pts = list(reconstruction_scaffold.observer_points)
+    if obs_pos != rec_pts:
+        raise ValueError(
+            "observer_scaffold.observer_positions does not match "
+            "reconstruction_scaffold.observer_points; packages are inconsistent"
+        )
+
+    # --- all checks passed: request_validated=True now ---
+    return ReconstructionGateRequest(
+        gate_stage="bem005b_reconstruction_execution_gate",
+        benchmark_id=_BID,
+        request_validated=True,
+        boundary_solution_package_id=boundary_solution.deterministic_package_id,
+        observer_scaffold_package_id=observer_scaffold.deterministic_package_id,
+        observer_count=observer_scaffold.observer_count,
+        observer_positions=obs_pos,
+    )
+
+
+def execute_reconstruction_gate(
+    request: ReconstructionGateRequest,
+) -> ReconstructionGateResult:
+    """
+    Execute the BEM-005B gate.  Physical reconstruction is explicitly blocked.
+    Returns a deterministic non-physical result package.
+
+    Parameters
+    ----------
+    request : ReconstructionGateRequest
+        A validated request produced by build_reconstruction_gate_request.
+    """
+    if not isinstance(request, ReconstructionGateRequest):
+        raise ValueError(
+            "request must be a ReconstructionGateRequest instance"
+        )
+    if not request.request_validated:
+        raise ValueError(
+            "request.request_validated is False; only validated requests may be executed"
+        )
+
+    n = request.observer_count
+    placeholder = [0j] * n
+
+    # --- deterministic package ID ---
+    id_lines = [
+        "gate_stage=bem005b_reconstruction_execution_gate",
+        f"benchmark_id={request.benchmark_id}",
+        f"boundary_solution_package_id={request.boundary_solution_package_id}",
+        f"observer_scaffold_package_id={request.observer_scaffold_package_id}",
+        f"observer_positions={request.observer_positions}",
+    ]
+    hash_input = "\n".join(id_lines)
+    package_id = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    return ReconstructionGateResult(
+        reconstruction_stage="bem005b_reconstruction_execution_gate",
+        benchmark_id=request.benchmark_id,
+        request_validated=True,
+        execution_gated=True,
+        physical_h_matrix_assembled=False,
+        physical_reconstruction_performed=False,
+        analytical_reference_comparison_performed=False,
+        tolerance_policy_applied=False,
+        singular_quadrature_implemented=False,
+        spl_computed=False,
+        directivity_computed=False,
+        impedance_computed=False,
+        non_physical=True,
+        reconstructed_incident_pressure=list(placeholder),
+        reconstructed_scattered_pressure=list(placeholder),
+        reconstructed_total_pressure=list(placeholder),
+        deterministic_package_id=package_id,
+    )
