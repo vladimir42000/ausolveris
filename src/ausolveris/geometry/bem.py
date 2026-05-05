@@ -1533,3 +1533,161 @@ def execute_reconstruction_gate(
         reconstructed_total_pressure=list(placeholder),
         deterministic_package_id=package_id,
     )
+
+# ============================================================================
+# BEM-005C: Analytical reference matching and tolerance scaffold
+# ============================================================================
+
+import math
+
+
+@dataclass
+class ReferenceMatchingReport:
+    """
+    BEM-005C matching/tolerance scaffold result.
+    Compares analytical total pressure (BEM-004F) against reconstructed total
+    pressure (BEM-005B).  Under current gated-zero reconstruction, benchmark_passed
+    is always False.  No physical reconstruction is performed here.
+    """
+    validation_stage: str
+    benchmark_id: str
+    observer_count: int
+    relative_l2_error: float
+    max_abs_error: float
+    relative_pressure_tolerance: float
+    absolute_pressure_tolerance: float
+    benchmark_passed: bool
+    reference_matching_performed: bool
+    tolerance_policy_applied: bool
+    physical_h_matrix_assembled: bool
+    singular_quadrature_implemented: bool
+    spl_computed: bool
+    directivity_computed: bool
+    impedance_computed: bool
+    non_physical: bool
+    analytical_package_id: str
+    reconstruction_package_id: str
+    deterministic_package_id: str
+
+
+def build_analytical_matching_report(
+    analytical_package: dict,
+    reconstruction_result: "ReconstructionGateResult",
+) -> ReferenceMatchingReport:
+    """
+    Validate structural consistency of the BEM-004F analytical package and the
+    BEM-005B gated reconstruction result, compute comparison metrics, apply
+    tolerance thresholds, and return a ReferenceMatchingReport.
+
+    Because BEM-005B returns zeroed non-physical pressure arrays, the benchmark
+    deterministically fails (benchmark_passed=False).  This is expected behaviour
+    at the current phase.
+
+    Parameters
+    ----------
+    analytical_package : dict
+        Package returned by AnalyticalRigidSphereReferenceEvaluator.evaluate().
+        Must contain keys: "total_pressure", "metadata" (with "benchmark_id"),
+        "package_id".
+    reconstruction_result : ReconstructionGateResult
+        Gated result produced by execute_reconstruction_gate().
+
+    Raises
+    ------
+    ValueError
+        On any structural inconsistency, benchmark_id mismatch, length mismatch,
+        or zero analytical norm.
+    """
+    _BID = "ben004_rigid_sphere_scattering_registered"
+    _REL_TOL = 1.0e-2
+    _ABS_TOL = 1.0e-6
+
+    # --- type / key guards ---
+    if not isinstance(analytical_package, dict):
+        raise ValueError(
+            "analytical_package must be a dict from AnalyticalRigidSphereReferenceEvaluator.evaluate()"
+        )
+    if "metadata" not in analytical_package or "total_pressure" not in analytical_package \
+            or "package_id" not in analytical_package:
+        raise ValueError(
+            "analytical_package must contain keys 'metadata', 'total_pressure', 'package_id'"
+        )
+    if not isinstance(reconstruction_result, ReconstructionGateResult):
+        raise ValueError(
+            "reconstruction_result must be a ReconstructionGateResult instance"
+        )
+
+    # --- benchmark ID checks ---
+    anal_bid = analytical_package["metadata"].get("benchmark_id", "")
+    if anal_bid != _BID:
+        raise ValueError(
+            f"analytical_package benchmark_id must be {_BID!r}; got {anal_bid!r}"
+        )
+    if reconstruction_result.benchmark_id != _BID:
+        raise ValueError(
+            f"reconstruction_result.benchmark_id must be {_BID!r}; "
+            f"got {reconstruction_result.benchmark_id!r}"
+        )
+
+    # --- extract pressure arrays ---
+    p_anal = list(analytical_package["total_pressure"])
+    p_rec = list(reconstruction_result.reconstructed_total_pressure)
+
+    # --- length consistency ---
+    if len(p_anal) != len(p_rec):
+        raise ValueError(
+            f"Pressure array length mismatch: analytical has {len(p_anal)} points, "
+            f"reconstruction has {len(p_rec)} points"
+        )
+
+    n = len(p_anal)
+
+    # --- compute metrics ---
+    norm_anal_sq = sum(abs(v) ** 2 for v in p_anal)
+    norm_anal = math.sqrt(norm_anal_sq)
+    if norm_anal == 0.0:
+        raise ValueError(
+            "Analytical total pressure norm is zero; relative_l2_error is undefined. "
+            "Ensure a non-trivial analytical field is evaluated."
+        )
+
+    diff = [p_anal[i] - p_rec[i] for i in range(n)]
+    norm_diff = math.sqrt(sum(abs(d) ** 2 for d in diff))
+    relative_l2_error = norm_diff / norm_anal
+    max_abs_error = max(abs(d) for d in diff)
+
+    # --- tolerance policy ---
+    benchmark_passed = (relative_l2_error <= _REL_TOL) and (max_abs_error <= _ABS_TOL)
+
+    # --- deterministic package ID ---
+    id_lines = [
+        "validation_stage=bem005c_analytical_matching_scaffold",
+        f"benchmark_id={_BID}",
+        f"analytical_package_id={analytical_package['package_id']}",
+        f"reconstruction_package_id={reconstruction_result.deterministic_package_id}",
+        f"relative_l2_error={relative_l2_error!r}",
+        f"max_abs_error={max_abs_error!r}",
+    ]
+    package_id = hashlib.sha256("\n".join(id_lines).encode("utf-8")).hexdigest()
+
+    return ReferenceMatchingReport(
+        validation_stage="bem005c_analytical_matching_scaffold",
+        benchmark_id=_BID,
+        observer_count=n,
+        relative_l2_error=relative_l2_error,
+        max_abs_error=max_abs_error,
+        relative_pressure_tolerance=_REL_TOL,
+        absolute_pressure_tolerance=_ABS_TOL,
+        benchmark_passed=benchmark_passed,
+        reference_matching_performed=True,
+        tolerance_policy_applied=True,
+        physical_h_matrix_assembled=False,
+        singular_quadrature_implemented=False,
+        spl_computed=False,
+        directivity_computed=False,
+        impedance_computed=False,
+        non_physical=True,
+        analytical_package_id=analytical_package["package_id"],
+        reconstruction_package_id=reconstruction_result.deterministic_package_id,
+        deterministic_package_id=package_id,
+    )
