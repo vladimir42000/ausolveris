@@ -1,3 +1,11 @@
+## Implementation status
+
+The blueprint described in this document was implemented in **BEM-005-PATCH**.
+See `repo-docs-pack/docs/50-operations/76-bem005-patch-status-v0.1.md` for the
+full change record and test evidence.
+
+---
+
 # 24 — Observer Interface Harmonization Review
 Version: v0.1
 Milestone: BEM-PHASE3-PLAN-002

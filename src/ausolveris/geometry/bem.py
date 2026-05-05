@@ -1293,19 +1293,19 @@ class ObserverReconstructionScaffold:
     def __init__(self, observer_scaffold, boundary_solution_stub):
         """
         Args:
-            observer_scaffold: BEM-004E exterior observer scaffold (with .points)
+            observer_scaffold: BEM-004E exterior observer scaffold (with .observer_positions)
             boundary_solution_stub: stub package containing boundary data (any dict with required keys? but not used)
         """
         # Validate observer scaffold
-        if not hasattr(observer_scaffold, 'points'):
-            raise ValueError("Observer scaffold must have 'points' attribute")
-        points = observer_scaffold.points
+        if not hasattr(observer_scaffold, 'observer_positions'):
+            raise ValueError("Observer scaffold must have 'observer_positions' attribute")
+        points = observer_scaffold.observer_positions
         if not isinstance(points, (list, tuple)) or len(points) == 0:
-            raise ValueError("Observer scaffold points must be non-empty list/tuple")
+            raise ValueError("Observer scaffold observer_positions must be non-empty list/tuple")
         for i, p in enumerate(points):
             if len(p) != 3:
                 raise ValueError(f"Point {i} is not (x,y,z) triple")
-        self.observer_points = points
+        self.observer_positions = points
 
         # Validate boundary solution stub (minimally, must be a dict with a key 'boundary_data_present')
         # We'll just check it's a dict (stub can be anything, but for deterministic ID we need to incorporate it)
@@ -1325,7 +1325,7 @@ class ObserverReconstructionScaffold:
         Return deterministic scaffold package with placeholder pressure arrays.
         Does NOT perform physical reconstruction.
         """
-        n = len(self.observer_points)
+        n = len(self.observer_positions)
         # Placeholder pressures: zero complex numbers (non-physical)
         placeholder = [0j] * n
 
@@ -1356,7 +1356,7 @@ class ObserverReconstructionScaffold:
     def _compute_package_id(self, result: Dict) -> str:
         """Deterministic SHA-256 of the result structure (excluding package_id itself)."""
         data = {
-            "observer_points": self.observer_points,
+            "observer_positions": self.observer_positions,
             "boundary_stub": self.boundary_stub,
             "reconstructed_incident_pressure": [[z.real, z.imag] for z in result["reconstructed_incident_pressure"]],
             "reconstructed_scattered_pressure": [[z.real, z.imag] for z in result["reconstructed_scattered_pressure"]],
@@ -1457,14 +1457,14 @@ def build_reconstruction_gate_request(
         )
 
     # --- observer position consistency ---
-    # ExteriorObserverScaffold stores: observer_positions (List[Tuple])
-    # ObserverReconstructionScaffold stores: observer_points (List, set by __init__)
+    # Both ExteriorObserverScaffold and ObserverReconstructionScaffold now use
+    # the canonical observer_positions attribute (BEM-005-PATCH).
     obs_pos = list(observer_scaffold.observer_positions)
-    rec_pts = list(reconstruction_scaffold.observer_points)
+    rec_pts = list(reconstruction_scaffold.observer_positions)
     if obs_pos != rec_pts:
         raise ValueError(
             "observer_scaffold.observer_positions does not match "
-            "reconstruction_scaffold.observer_points; packages are inconsistent"
+            "reconstruction_scaffold.observer_positions; packages are inconsistent"
         )
 
     # --- all checks passed: request_validated=True now ---

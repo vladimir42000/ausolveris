@@ -14,9 +14,9 @@ from ausolveris.geometry.bem import ObserverReconstructionScaffold
 # ----------------------------------------------------------------------------
 
 class MockObserverScaffold:
-    """Simulates BEM-004E exterior observer scaffold."""
-    def __init__(self, points):
-        self.points = points
+    """Simulates BEM-004E exterior observer scaffold — canonical attribute: observer_positions."""
+    def __init__(self, observer_positions):
+        self.observer_positions = observer_positions
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def scaffold(valid_observer_scaffold, valid_boundary_stub):
 def test_1_accepts_valid_observer_scaffold(valid_observer_scaffold, valid_boundary_stub):
     """1. Valid BEM-004E exterior observer scaffold is accepted."""
     scaffold = ObserverReconstructionScaffold(valid_observer_scaffold, valid_boundary_stub)
-    assert scaffold.observer_points == valid_observer_scaffold.points
+    assert scaffold.observer_positions == valid_observer_scaffold.observer_positions
 
 
 def test_2_accepts_stub_boundary_package(valid_observer_scaffold, valid_boundary_stub):
@@ -61,7 +61,7 @@ def test_3_exposes_three_pressure_fields(scaffold):
 def test_4_pressure_arrays_match_observer_length(scaffold, valid_observer_scaffold):
     """4. Reconstructed pressure arrays have lengths matching the observer scaffold."""
     result = scaffold.reconstruct()
-    n_obs = len(valid_observer_scaffold.points)
+    n_obs = len(valid_observer_scaffold.observer_positions)
     assert len(result["reconstructed_incident_pressure"]) == n_obs
     assert len(result["reconstructed_scattered_pressure"]) == n_obs
     assert len(result["reconstructed_total_pressure"]) == n_obs
@@ -119,7 +119,7 @@ def test_9_deterministic_package_id(scaffold):
 
 def test_10_rejects_invalid_inputs(valid_boundary_stub):
     """10. Invalid observer scaffold or invalid boundary-solution package is rejected."""
-    # Invalid observer scaffold (no points)
+    # Invalid observer scaffold (no observer_positions)
     class BadScaffold:
         pass
     with pytest.raises(ValueError):

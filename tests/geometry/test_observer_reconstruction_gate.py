@@ -27,13 +27,13 @@ _OBSERVER_POSITIONS = [(2.0, 0.0, 0.0), (0.0, 2.0, 0.0), (0.0, 0.0, 2.0)]
 
 # ---------------------------------------------------------------------------
 # Shared helper: lightweight wrapper giving ObserverReconstructionScaffold
-# the .points attribute it requires, identical pattern to BEM-005A tests.
+# the canonical .observer_positions attribute it now requires (BEM-005-PATCH).
 # ---------------------------------------------------------------------------
 
 class _Pts:
-    """Minimal .points wrapper — same pattern used throughout BEM-005A tests."""
+    """Minimal .observer_positions wrapper — harmonized canonical attribute."""
     def __init__(self, pts):
-        self.points = pts
+        self.observer_positions = pts
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ def observer_scaffold():
 
 @pytest.fixture(scope="module")
 def reconstruction_scaffold():
-    """Real BEM-005A ObserverReconstructionScaffold, using the approved .points wrapper."""
+    """Real BEM-005A ObserverReconstructionScaffold, using the harmonized .observer_positions wrapper."""
     return ObserverReconstructionScaffold(
         _Pts(_OBSERVER_POSITIONS),
         {"boundary_data_present": True, "stage": "bem004c_stub"},
