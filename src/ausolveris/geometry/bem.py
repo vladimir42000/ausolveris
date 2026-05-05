@@ -1691,3 +1691,173 @@ def build_analytical_matching_report(
         reconstruction_package_id=reconstruction_result.deterministic_package_id,
         deterministic_package_id=package_id,
     )
+
+# ============================================================================
+# BEM-006A: Regular exterior observer H-matrix prototype
+# ============================================================================
+
+
+@dataclass
+class HMatrixPrototype:
+    """
+    BEM-006A regular exterior observer H-matrix prototype package.
+
+    Stores the boundary-to-observer interaction matrix assembled using the
+    same single-layer Green-function kernel as BEM-003 (H[i,j] = G(r_ij,k)*area_j),
+    applied from strictly exterior observer positions to the controlled panel
+    subset centroids.
+
+    No reconstruction is performed. No validation is claimed. The package is
+    explicitly non_physical as a solver result because no H @ boundary_unknowns
+    multiplication has been executed.
+    """
+    matrix_stage: str
+    benchmark_id: str
+    observer_count: int
+    panel_count: int
+    selected_panel_indices: List[int]
+    k_rad_m: float
+    observer_positions: List[Tuple[float, float, float]]
+    panel_centroids: List[Tuple[float, float, float]]
+    panel_areas: List[float]
+    h_matrix: List[List[complex]]          # shape: observer_count × panel_count
+    physical_h_matrix_assembled: bool
+    singular_quadrature_implemented: bool
+    reconstruction_performed: bool
+    analytical_reference_comparison_performed: bool
+    tolerance_policy_applied: bool
+    spl_computed: bool
+    directivity_computed: bool
+    impedance_computed: bool
+    non_physical: bool
+    deterministic_package_id: str
+
+
+def assemble_regular_h_matrix_prototype(
+    fixture: "RigidSphereMeshFixture",
+    selected_indices: List[int],
+    observer_scaffold: ExteriorObserverScaffold,
+    k_rad_m: float,
+) -> HMatrixPrototype:
+    """
+    Assemble a regular exterior observer boundary-to-observer H-matrix
+    prototype for a controlled 3–6 panel subset on the rigid-sphere benchmark.
+
+    Kernel convention (identical to BEM-003 single-layer):
+        H[i, j] = G(|x_obs_i − centroid_j|, k) * area_j
+
+    Observers must be strictly exterior (guaranteed by ExteriorObserverScaffold
+    domain validation). No near-singular or singular quadrature is applied.
+    No reconstruction is executed. No matrix-vector multiplication is performed.
+
+    Parameters
+    ----------
+    fixture : RigidSphereMeshFixture
+        Must be the ben004_rigid_sphere_scattering_registered fixture.
+    selected_indices : list of int
+        Panel indices to include (3–6 unique valid indices).
+    observer_scaffold : ExteriorObserverScaffold
+        BEM-004E exterior observer scaffold carrying canonical observer_positions.
+    k_rad_m : float
+        Wavenumber in rad/m (finite, >= 0).
+
+    Returns
+    -------
+    HMatrixPrototype
+
+    Raises
+    ------
+    ValueError
+        On any structural inconsistency or out-of-range input.
+    """
+    _BID = "ben004_rigid_sphere_scattering_registered"
+
+    # --- type and benchmark guards ---
+    if not isinstance(observer_scaffold, ExteriorObserverScaffold):
+        raise ValueError(
+            "observer_scaffold must be an ExteriorObserverScaffold instance"
+        )
+    if fixture.benchmark_id != _BID:
+        raise ValueError(
+            f"fixture.benchmark_id must be {_BID!r}; got {fixture.benchmark_id!r}"
+        )
+    if observer_scaffold.benchmark_id != _BID:
+        raise ValueError(
+            f"observer_scaffold.benchmark_id must be {_BID!r}; "
+            f"got {observer_scaffold.benchmark_id!r}"
+        )
+
+    # --- panel subset validation ---
+    if not (3 <= len(selected_indices) <= 6):
+        raise ValueError(
+            f"selected_indices must contain 3 to 6 panels; got {len(selected_indices)}"
+        )
+    if len(set(selected_indices)) != len(selected_indices):
+        raise ValueError("Duplicate panel indices are not allowed")
+    if not all(isinstance(i, int) and 0 <= i < len(fixture.panels)
+               for i in selected_indices):
+        raise ValueError("Invalid panel index – must exist in fixture")
+
+    # --- wavenumber guard ---
+    if not math.isfinite(k_rad_m) or k_rad_m < 0.0:
+        raise ValueError("k_rad_m must be finite and non-negative")
+
+    # --- extract geometry ---
+    sorted_idx = sorted(selected_indices)
+    n_panels = len(sorted_idx)
+    centroids = [fixture.panels[idx].centroid for idx in sorted_idx]
+    areas = [fixture.panels[idx].area for idx in sorted_idx]
+    obs_positions = list(observer_scaffold.observer_positions)
+    n_obs = len(obs_positions)
+
+    # --- assemble H matrix: shape (n_obs, n_panels) ---
+    # Kernel: H[i,j] = G(|x_obs_i - centroid_j|, k) * area_j
+    # Identical single-layer convention to BEM-003 operator assembly.
+    # All interactions are regular (observers strictly exterior; no self-panel).
+    h_matrix = []
+    for i in range(n_obs):
+        row = []
+        for j in range(n_panels):
+            r = _distance(obs_positions[i], centroids[j])
+            G = helmholtz_green_function(r, k_rad_m)
+            row.append(G * areas[j])
+        h_matrix.append(row)
+
+    # --- deterministic package ID ---
+    id_lines = [
+        "matrix_stage=bem006a_regular_h_matrix_prototype",
+        f"benchmark_id={_BID}",
+        f"fixture_hash={fixture.fixture_hash}",
+        f"k_rad_m={k_rad_m:.15e}",
+        f"selected_panel_indices={sorted_idx}",
+        f"observer_positions={obs_positions}",
+    ]
+    for row in h_matrix:
+        for z in row:
+            id_lines.append(f"{z.real:.15e}+{z.imag:.15e}j")
+    package_id = hashlib.sha256(
+        "\n".join(id_lines).encode("utf-8")
+    ).hexdigest()
+
+    return HMatrixPrototype(
+        matrix_stage="bem006a_regular_h_matrix_prototype",
+        benchmark_id=_BID,
+        observer_count=n_obs,
+        panel_count=n_panels,
+        selected_panel_indices=sorted_idx,
+        k_rad_m=k_rad_m,
+        observer_positions=obs_positions,
+        panel_centroids=centroids,
+        panel_areas=areas,
+        h_matrix=h_matrix,
+        physical_h_matrix_assembled=True,
+        singular_quadrature_implemented=False,
+        reconstruction_performed=False,
+        analytical_reference_comparison_performed=False,
+        tolerance_policy_applied=False,
+        spl_computed=False,
+        directivity_computed=False,
+        impedance_computed=False,
+        non_physical=True,
+        deterministic_package_id=package_id,
+    )
