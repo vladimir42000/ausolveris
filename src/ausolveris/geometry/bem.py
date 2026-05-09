@@ -1861,3 +1861,189 @@ def assemble_regular_h_matrix_prototype(
         non_physical=True,
         deterministic_package_id=package_id,
     )
+
+# ============================================================================
+# BEM-006B: Gated exterior reconstruction prototype
+# ============================================================================
+
+
+@dataclass
+class ReconstructedObserverPressure:
+    """
+    BEM-006B gated exterior reconstruction result.
+
+    Contains numerically reconstructed observer-pressure arrays produced by
+    the prototype matrix-vector multiplication p_scattered = H @ x, where H
+    is the BEM-006A regular H-matrix prototype and x is the BEM-004C
+    artificially regularized boundary solution vector.
+
+    The package is non_physical=True as a validation result: it is based on
+    a toy regularized 3–6 panel prototype and is not compared against the
+    BEM-004F analytical reference.  The BEM-005C matching gate is not invoked.
+    """
+    reconstruction_stage: str
+    benchmark_id: str
+    observer_count: int
+    panel_count: int
+    reconstructed_incident_pressure: List[complex]
+    reconstructed_scattered_pressure: List[complex]
+    reconstructed_total_pressure: List[complex]
+    incident_pressure_supplied: bool
+    physical_h_matrix_assembled: bool
+    physical_reconstruction_performed: bool
+    singular_quadrature_implemented: bool
+    analytical_reference_comparison_performed: bool
+    tolerance_policy_applied: bool
+    spl_computed: bool
+    directivity_computed: bool
+    impedance_computed: bool
+    non_physical: bool
+    h_matrix_package_id: str
+    boundary_solution_package_id: str
+    deterministic_package_id: str
+
+
+def reconstruct_exterior_observer_pressure(
+    h_matrix_prototype: "HMatrixPrototype",
+    boundary_solution: "RegularizedSolvePrototype",
+    incident_pressure: "List[complex] | None" = None,
+) -> ReconstructedObserverPressure:
+    """
+    Execute the prototype boundary-to-observer matrix-vector multiplication:
+
+        p_scattered[i] = sum_j( H[i,j] * x[j] )
+
+    where H is the BEM-006A regular H-matrix and x is the BEM-004C regularized
+    boundary solution vector.
+
+    Incident pressure policy
+    ------------------------
+    If `incident_pressure` is supplied, it must have length equal to
+    `h_matrix_prototype.observer_count` and is used directly:
+        p_total = p_incident + p_scattered
+
+    If `incident_pressure` is None (default), a deterministic zero array is
+    used as placeholder:
+        p_incident = [0j] * observer_count
+        p_total    = p_scattered   (same object, since zeros add nothing)
+
+    This choice is documented here and in the validation doc.  No controlled
+    ValueError is raised for absent incident pressure; the zero-array behaviour
+    is intentional and clearly marked in the output via `incident_pressure_supplied`.
+
+    Analytical comparison is NOT performed.  BEM-005C is NOT called.
+    Tolerance policy is NOT applied.
+
+    Parameters
+    ----------
+    h_matrix_prototype : HMatrixPrototype
+        BEM-006A regular exterior H-matrix prototype package.
+    boundary_solution : RegularizedSolvePrototype
+        BEM-004C artificially regularized boundary solution package.
+    incident_pressure : list of complex or None
+        Optional incident pressure at each observer point.  If None, a
+        deterministic zero placeholder is used.
+
+    Returns
+    -------
+    ReconstructedObserverPressure
+
+    Raises
+    ------
+    ValueError
+        On type error, benchmark ID mismatch, or dimension incompatibility.
+    """
+    _BID = "ben004_rigid_sphere_scattering_registered"
+
+    # --- type guards ---
+    if not isinstance(h_matrix_prototype, HMatrixPrototype):
+        raise ValueError(
+            "h_matrix_prototype must be an HMatrixPrototype instance"
+        )
+    if not isinstance(boundary_solution, RegularizedSolvePrototype):
+        raise ValueError(
+            "boundary_solution must be a RegularizedSolvePrototype instance"
+        )
+
+    # --- benchmark ID checks ---
+    if h_matrix_prototype.benchmark_id != _BID:
+        raise ValueError(
+            f"h_matrix_prototype.benchmark_id must be {_BID!r}; "
+            f"got {h_matrix_prototype.benchmark_id!r}"
+        )
+    if boundary_solution.benchmark_id != _BID:
+        raise ValueError(
+            f"boundary_solution.benchmark_id must be {_BID!r}; "
+            f"got {boundary_solution.benchmark_id!r}"
+        )
+
+    # --- dimension compatibility ---
+    n_obs = h_matrix_prototype.observer_count
+    n_pan = h_matrix_prototype.panel_count
+    n_sol = len(boundary_solution.solution)
+    if n_pan != n_sol:
+        raise ValueError(
+            f"Dimension mismatch: H has {n_pan} columns (panels) but "
+            f"boundary solution vector has length {n_sol}"
+        )
+
+    # --- incident pressure ---
+    if incident_pressure is not None:
+        if len(incident_pressure) != n_obs:
+            raise ValueError(
+                f"incident_pressure length {len(incident_pressure)} does not match "
+                f"observer_count {n_obs}"
+            )
+        p_inc = list(incident_pressure)
+        inc_supplied = True
+    else:
+        p_inc = [0j] * n_obs
+        inc_supplied = False
+
+    # --- H @ x  (pure Python, no new dependency) ---
+    x = boundary_solution.solution
+    H = h_matrix_prototype.h_matrix
+    p_scat = [
+        sum(H[i][j] * x[j] for j in range(n_pan))
+        for i in range(n_obs)
+    ]
+
+    # --- total pressure ---
+    p_total = [p_inc[i] + p_scat[i] for i in range(n_obs)]
+
+    # --- deterministic package ID ---
+    id_lines = [
+        "reconstruction_stage=bem006b_gated_exterior_reconstruction",
+        f"benchmark_id={_BID}",
+        f"h_matrix_package_id={h_matrix_prototype.deterministic_package_id}",
+        f"boundary_solution_package_id={boundary_solution.deterministic_package_id}",
+        f"incident_pressure_supplied={inc_supplied}",
+    ]
+    for v in p_scat:
+        id_lines.append(f"{v.real:.15e}+{v.imag:.15e}j")
+    package_id = hashlib.sha256(
+        "\n".join(id_lines).encode("utf-8")
+    ).hexdigest()
+
+    return ReconstructedObserverPressure(
+        reconstruction_stage="bem006b_gated_exterior_reconstruction",
+        benchmark_id=_BID,
+        observer_count=n_obs,
+        panel_count=n_pan,
+        reconstructed_incident_pressure=p_inc,
+        reconstructed_scattered_pressure=p_scat,
+        reconstructed_total_pressure=p_total,
+        incident_pressure_supplied=inc_supplied,
+        physical_h_matrix_assembled=True,
+        physical_reconstruction_performed=True,
+        singular_quadrature_implemented=False,
+        analytical_reference_comparison_performed=False,
+        tolerance_policy_applied=False,
+        spl_computed=False,
+        directivity_computed=False,
+        impedance_computed=False,
+        non_physical=True,
+        h_matrix_package_id=h_matrix_prototype.deterministic_package_id,
+        boundary_solution_package_id=boundary_solution.deterministic_package_id,
+        deterministic_package_id=package_id,
+    )
