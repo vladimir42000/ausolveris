@@ -2047,3 +2047,181 @@ def reconstruct_exterior_observer_pressure(
         boundary_solution_package_id=boundary_solution.deterministic_package_id,
         deterministic_package_id=package_id,
     )
+
+# ============================================================================
+# BEM-006C: Pipeline integration report (expected-failure comparison)
+# ============================================================================
+
+
+@dataclass
+class PipelineIntegrationReport:
+    """
+    BEM-006C pipeline integration expected-failure report.
+
+    Connects BEM-006B's real numerical reconstructed pressure arrays to the
+    BEM-005C-style analytical matching pipeline.  The benchmark deterministically
+    fails because the prototype is based on a toy 3–6 panel regular-only
+    reconstruction and is not a validated full BEM solve.
+
+    This failure is expected and correct.  It is not a software defect.
+    """
+    validation_stage: str
+    benchmark_id: str
+    observer_count: int
+    relative_l2_error: float
+    max_abs_error: float
+    relative_pressure_tolerance: float
+    absolute_pressure_tolerance: float
+    benchmark_passed: bool
+    numerical_data_consumed: bool
+    analytical_reference_matched: bool
+    tolerance_policy_applied: bool
+    error_norms_computed: bool
+    physical_h_matrix_assembled: bool
+    singular_quadrature_implemented: bool
+    non_physical_prototype_warning: bool
+    spl_computed: bool
+    directivity_computed: bool
+    impedance_computed: bool
+    reconstruction_package_id: str
+    analytical_package_id: str
+    deterministic_package_id: str
+
+
+def build_pipeline_integration_report(
+    analytical_package: dict,
+    reconstructed_pressure: "ReconstructedObserverPressure",
+) -> PipelineIntegrationReport:
+    """
+    Integrate BEM-006B reconstructed pressure into the analytical matching
+    pipeline and return an expected-failure report.
+
+    Computes:
+        relative_l2_error = ||p_anal_total - p_rec_total||_2 / ||p_anal_total||_2
+        max_abs_error     = max(|p_anal_total[i] - p_rec_total[i]|)
+
+    The benchmark deterministically fails because the reconstructed pressure
+    comes from a regular-only 3–6 panel prototype with an artificially
+    regularized boundary solution, not a validated full BEM solve.
+
+    Parameters
+    ----------
+    analytical_package : dict
+        Package returned by AnalyticalRigidSphereReferenceEvaluator.evaluate().
+        Must contain: "total_pressure", "metadata" (with "benchmark_id"),
+        "package_id".
+    reconstructed_pressure : ReconstructedObserverPressure
+        BEM-006B gated exterior reconstruction result.
+
+    Returns
+    -------
+    PipelineIntegrationReport
+
+    Raises
+    ------
+    ValueError
+        On type error, benchmark ID mismatch, length mismatch, or zero
+        analytical norm.
+    """
+    _BID = "ben004_rigid_sphere_scattering_registered"
+    _REL_TOL = 1.0e-2
+    _ABS_TOL = 1.0e-6
+
+    # --- type guards ---
+    if not isinstance(analytical_package, dict):
+        raise ValueError(
+            "analytical_package must be a dict from "
+            "AnalyticalRigidSphereReferenceEvaluator.evaluate()"
+        )
+    for key in ("metadata", "total_pressure", "package_id"):
+        if key not in analytical_package:
+            raise ValueError(
+                f"analytical_package missing required key: {key!r}"
+            )
+    if not isinstance(reconstructed_pressure, ReconstructedObserverPressure):
+        raise ValueError(
+            "reconstructed_pressure must be a ReconstructedObserverPressure instance"
+        )
+
+    # --- benchmark ID checks ---
+    anal_bid = analytical_package["metadata"].get("benchmark_id", "")
+    if anal_bid != _BID:
+        raise ValueError(
+            f"analytical_package benchmark_id must be {_BID!r}; got {anal_bid!r}"
+        )
+    if reconstructed_pressure.benchmark_id != _BID:
+        raise ValueError(
+            f"reconstructed_pressure.benchmark_id must be {_BID!r}; "
+            f"got {reconstructed_pressure.benchmark_id!r}"
+        )
+
+    # --- extract and check pressure arrays ---
+    p_anal = list(analytical_package["total_pressure"])
+    p_rec  = list(reconstructed_pressure.reconstructed_total_pressure)
+
+    if len(p_anal) != len(p_rec):
+        raise ValueError(
+            f"Pressure array length mismatch: analytical has {len(p_anal)} "
+            f"points, reconstructed has {len(p_rec)} points"
+        )
+
+    n = len(p_anal)
+
+    # --- assert numerical data was consumed (non-zero reconstruction) ---
+    # This flag documents that we are using real H@x output, not the
+    # BEM-005B gated-zero placeholders.
+    numerical_data_consumed = reconstructed_pressure.physical_reconstruction_performed
+
+    # --- compute error norms ---
+    norm_anal_sq = sum(abs(v) ** 2 for v in p_anal)
+    norm_anal = math.sqrt(norm_anal_sq)
+    if norm_anal == 0.0:
+        raise ValueError(
+            "Analytical total pressure norm is zero; relative_l2_error is "
+            "undefined.  Ensure a non-trivial analytical field is evaluated."
+        )
+
+    diff = [p_anal[i] - p_rec[i] for i in range(n)]
+    norm_diff = math.sqrt(sum(abs(d) ** 2 for d in diff))
+    relative_l2_error = norm_diff / norm_anal
+    max_abs_error = max(abs(d) for d in diff)
+
+    # --- tolerance policy (benchmark expected to fail) ---
+    benchmark_passed = (relative_l2_error <= _REL_TOL) and (max_abs_error <= _ABS_TOL)
+
+    # --- deterministic package ID ---
+    id_lines = [
+        "validation_stage=bem006c_pipeline_integration_report",
+        f"benchmark_id={_BID}",
+        f"analytical_package_id={analytical_package['package_id']}",
+        f"reconstruction_package_id={reconstructed_pressure.deterministic_package_id}",
+        f"relative_l2_error={relative_l2_error!r}",
+        f"max_abs_error={max_abs_error!r}",
+    ]
+    package_id = hashlib.sha256(
+        "\n".join(id_lines).encode("utf-8")
+    ).hexdigest()
+
+    return PipelineIntegrationReport(
+        validation_stage="bem006c_pipeline_integration_report",
+        benchmark_id=_BID,
+        observer_count=n,
+        relative_l2_error=relative_l2_error,
+        max_abs_error=max_abs_error,
+        relative_pressure_tolerance=_REL_TOL,
+        absolute_pressure_tolerance=_ABS_TOL,
+        benchmark_passed=benchmark_passed,
+        numerical_data_consumed=numerical_data_consumed,
+        analytical_reference_matched=True,
+        tolerance_policy_applied=True,
+        error_norms_computed=True,
+        physical_h_matrix_assembled=True,
+        singular_quadrature_implemented=False,
+        non_physical_prototype_warning=True,
+        spl_computed=False,
+        directivity_computed=False,
+        impedance_computed=False,
+        reconstruction_package_id=reconstructed_pressure.deterministic_package_id,
+        analytical_package_id=analytical_package["package_id"],
+        deterministic_package_id=package_id,
+    )
