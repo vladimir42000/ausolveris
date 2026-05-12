@@ -2413,4 +2413,3 @@ def evaluate_regular_off_diagonal_triangle_quadrature(source_panel, target_panel
 # Explicit milestone alias for tests and future grep-based audits.
 bem007b_evaluate_regular_off_diagonal_triangle_quadrature = evaluate_regular_off_diagonal_triangle_quadrature
 # END BEM-007B REGULAR OFF-DIAGONAL QUADRATURE PROTOTYPE
-
