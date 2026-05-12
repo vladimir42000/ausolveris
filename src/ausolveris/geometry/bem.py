@@ -2225,3 +2225,192 @@ def build_pipeline_integration_report(
         analytical_package_id=analytical_package["package_id"],
         deterministic_package_id=package_id,
     )
+
+# BEGIN BEM-007B REGULAR OFF-DIAGONAL QUADRATURE PROTOTYPE
+import cmath as _bem007b_cmath
+import hashlib as _bem007b_hashlib
+import json as _bem007b_json
+import math as _bem007b_math
+
+BEM007B_REGULAR_QUADRATURE_METADATA = {
+    "quadrature_stage": "bem007b_regular_off_diagonal_prototype",
+    "benchmark_id": "ben004_rigid_sphere_scattering_registered",
+    "regular_quadrature_implemented": True,
+    "singular_quadrature_implemented": False,
+    "physical_a_matrix_assembled": False,
+    "adaptive_integration_used": False,
+    "flat_panels_only": True,
+    "benchmark_passed": False,
+    "non_physical": True,
+}
+
+_BEM007B_REFERENCE_TRIANGLE_RULE = (
+    ((1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0), 0.11250000000000000),
+    ((0.47014206410511505, 0.47014206410511505, 0.05971587178976981), 0.06619707639425308),
+    ((0.47014206410511505, 0.05971587178976981, 0.47014206410511505), 0.06619707639425308),
+    ((0.05971587178976981, 0.47014206410511505, 0.47014206410511505), 0.06619707639425308),
+    ((0.10128650732345634, 0.10128650732345634, 0.79742698535308720), 0.06296959027241357),
+    ((0.10128650732345634, 0.79742698535308720, 0.10128650732345634), 0.06296959027241357),
+    ((0.79742698535308720, 0.10128650732345634, 0.10128650732345634), 0.06296959027241357),
+)
+
+
+def bem007b_regular_triangle_quadrature_rule():
+    """Return the fixed regular triangle rule used by BEM-007B.
+
+    Weights are expressed on the reference triangle whose area is 0.5.
+    The physical integral is obtained by multiplying each reference weight
+    by the physical triangle Jacobian, i.e. ``2 * physical_area``.
+    """
+
+    return tuple((tuple(barycentric), float(weight)) for barycentric, weight in _BEM007B_REFERENCE_TRIANGLE_RULE)
+
+
+def _bem007b_as_point3(value, label):
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise ValueError(f"{label} must be a 3D point")
+    try:
+        point = tuple(float(component) for component in value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must contain finite numeric coordinates") from exc
+    if not all(_bem007b_math.isfinite(component) for component in point):
+        raise ValueError(f"{label} must contain finite numeric coordinates")
+    return point
+
+
+def _bem007b_subtract(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _bem007b_cross(a, b):
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _bem007b_norm(a):
+    return _bem007b_math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2])
+
+
+def _bem007b_triangle_jacobian(vertices):
+    edge_01 = _bem007b_subtract(vertices[1], vertices[0])
+    edge_02 = _bem007b_subtract(vertices[2], vertices[0])
+    return _bem007b_norm(_bem007b_cross(edge_01, edge_02))
+
+
+def _bem007b_validate_triangle(panel, label):
+    if not isinstance(panel, (list, tuple)) or len(panel) != 3:
+        raise ValueError(f"{label} must be exactly one flat triangular panel with 3 vertices")
+    vertices = tuple(_bem007b_as_point3(vertex, f"{label}[{index}]") for index, vertex in enumerate(panel))
+    jacobian = _bem007b_triangle_jacobian(vertices)
+    if jacobian <= 1.0e-14:
+        raise ValueError(f"{label} is degenerate and cannot be used for regular quadrature")
+    return vertices
+
+
+def _bem007b_centroid(vertices):
+    return (
+        (vertices[0][0] + vertices[1][0] + vertices[2][0]) / 3.0,
+        (vertices[0][1] + vertices[1][1] + vertices[2][1]) / 3.0,
+        (vertices[0][2] + vertices[1][2] + vertices[2][2]) / 3.0,
+    )
+
+
+def _bem007b_barycentric_point(vertices, barycentric):
+    return (
+        barycentric[0] * vertices[0][0] + barycentric[1] * vertices[1][0] + barycentric[2] * vertices[2][0],
+        barycentric[0] * vertices[0][1] + barycentric[1] * vertices[1][1] + barycentric[2] * vertices[2][1],
+        barycentric[0] * vertices[0][2] + barycentric[1] * vertices[1][2] + barycentric[2] * vertices[2][2],
+    )
+
+
+def _bem007b_point_distance(a, b):
+    return _bem007b_norm(_bem007b_subtract(a, b))
+
+
+def _bem007b_panels_share_vertex(source_vertices, target_vertices):
+    for source in source_vertices:
+        for target in target_vertices:
+            if _bem007b_point_distance(source, target) <= 1.0e-12:
+                return True
+    return False
+
+
+def _bem007b_normalized_number(value):
+    return format(float(value), ".17g")
+
+
+def _bem007b_normalized_panel(vertices):
+    return [[_bem007b_normalized_number(component) for component in vertex] for vertex in vertices]
+
+
+def _bem007b_package_id(source_vertices, target_vertices, wavenumber, rule_id):
+    payload = {
+        "contract": "bem007b_regular_off_diagonal_triangle_quadrature",
+        "source_panel": _bem007b_normalized_panel(source_vertices),
+        "target_panel": _bem007b_normalized_panel(target_vertices),
+        "wavenumber": _bem007b_normalized_number(wavenumber),
+        "rule_id": rule_id,
+        "metadata": BEM007B_REGULAR_QUADRATURE_METADATA,
+    }
+    encoded = _bem007b_json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return _bem007b_hashlib.sha256(encoded).hexdigest()
+
+
+def evaluate_regular_off_diagonal_triangle_quadrature(source_panel, target_panel, wavenumber):
+    """Evaluate a regular indirect single-layer source-panel integral.
+
+    The target collocation point is the centroid of ``target_panel``.  This is
+    a pairwise regular off-diagonal utility only.  It rejects self/coincident
+    and vertex-touching panels instead of attempting singular or near-singular
+    treatment.
+    """
+
+    source_vertices = _bem007b_validate_triangle(source_panel, "source_panel")
+    target_vertices = _bem007b_validate_triangle(target_panel, "target_panel")
+    try:
+        k = float(wavenumber)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("wavenumber must be a finite numeric value") from exc
+    if not _bem007b_math.isfinite(k):
+        raise ValueError("wavenumber must be a finite numeric value")
+
+    if source_vertices == target_vertices:
+        raise ValueError("regular off-diagonal quadrature requires distinct source and target panels")
+    if _bem007b_panels_share_vertex(source_vertices, target_vertices):
+        raise ValueError("regular off-diagonal quadrature rejects touching or coincident panels")
+
+    target_point = _bem007b_centroid(target_vertices)
+    source_jacobian = _bem007b_triangle_jacobian(source_vertices)
+    rule = bem007b_regular_triangle_quadrature_rule()
+    value = 0.0 + 0.0j
+    minimum_distance = float("inf")
+
+    for barycentric, reference_weight in rule:
+        source_point = _bem007b_barycentric_point(source_vertices, barycentric)
+        radius = _bem007b_point_distance(target_point, source_point)
+        minimum_distance = min(minimum_distance, radius)
+        if radius <= 1.0e-12:
+            raise ValueError("regular off-diagonal quadrature encountered a non-regular collocation distance")
+        green = _bem007b_cmath.exp(1j * k * radius) / (4.0 * _bem007b_math.pi * radius)
+        value += reference_weight * source_jacobian * green
+
+    rule_id = "dunavant_degree5_reference_area_0p5_fixed7"
+    return {
+        "value": value,
+        "package_id": _bem007b_package_id(source_vertices, target_vertices, k, rule_id),
+        "metadata": dict(BEM007B_REGULAR_QUADRATURE_METADATA),
+        "quadrature_rule_id": rule_id,
+        "reference_weight_sum": sum(weight for _, weight in rule),
+        "source_area": 0.5 * source_jacobian,
+        "target_collocation_point": target_point,
+        "minimum_collocation_distance": minimum_distance,
+    }
+
+
+# Explicit milestone alias for tests and future grep-based audits.
+bem007b_evaluate_regular_off_diagonal_triangle_quadrature = evaluate_regular_off_diagonal_triangle_quadrature
+# END BEM-007B REGULAR OFF-DIAGONAL QUADRATURE PROTOTYPE
+
