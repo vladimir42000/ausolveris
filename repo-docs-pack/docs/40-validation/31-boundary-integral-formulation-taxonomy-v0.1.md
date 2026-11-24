@@ -1,5 +1,5 @@
 # 31 — Boundary Integral Formulation and Singular Kernel Taxonomy
-Version: v0.1
+Version: v0.1 with BEM-007C convention correction
 Milestone: BEM-007A
 Type: documentation-only freeze
 Executable code changes: none
@@ -18,7 +18,7 @@ p_s(x) = ∫_S G(x, y; k) σ(y) dS(y)     x ∉ S
 
 where:
 - `S` is the closed rigid-sphere surface,
-- `σ(y)` is the unknown single-layer source density (units: Pa·m, acoustic),
+- `σ(y)` is the unknown single-layer source density (units: Pa/m),
 - `G(x, y; k)` is the free-space Helmholtz Green function (defined below),
 - the integral is over the source surface `S`.
 
@@ -33,19 +33,19 @@ Applying the normal derivative of the single-layer potential and using the
 jump relation, the boundary integral equation for σ is:
 
 ```
-(1/2) σ(x) + (D'σ)(x) = -∂p_inc/∂n(x)     x ∈ S
+−(1/2) σ(x) + (D'σ)(x) = -∂p_inc/∂n(x)     x ∈ S
 ```
 
 where `D'` is the adjoint double-layer operator. In the current controlled
-prototype (BEM-004C), the `(1/2)σ` jump term and the `D'` operator are
+prototype (BEM-004C), the `−(1/2)σ` jump term and the `D'` operator are
 approximated together by the regularized algebraic prototype. A physically
 correct boundary solve must implement these terms explicitly.
 
 This formulation is selected because:
 - it is consistent with the single-layer kernel already used in BEM-003
   and BEM-006A,
-- the observer reconstruction `p_s(x_obs) = (Sσ)(x_obs)` uses the same
-  Green function kernel as the boundary operator,
+- the observer reconstruction `p_s(x_obs) = (Sσ)(x_obs)` uses the scalar
+  Green function whose target-normal derivative enters the boundary operator,
 - it avoids the Burton–Miller hypersingular integral required by some direct
   formulations, deferring hypersingular treatment to a later milestone.
 
@@ -60,8 +60,7 @@ the next implementation path.
 
 `σ(y)` is the unknown surface density, physically interpreted as the
 equivalent acoustic source strength per unit area distributed on `S`.
-Units: Pa·m (pressure times length, consistent with the Green function
-units of m⁻¹).
+Units: Pa/m, since G dS has units of metres.
 
 `σ` is not the boundary pressure and is not the normal velocity or the
 Neumann data. These are quantities that can be recovered after σ is found,
@@ -80,40 +79,11 @@ primary mathematical deficit identified in BEM-PHASE4-PLAN-002.
 
 ## 3. Boundary operator A
 
-**Single-layer operator (weak-singular)**
-
-```
-(Sσ)(x) = ∫_S G(x, y; k) σ(y) dS(y)
-```
-
-At collocation points `x_i` on the surface:
-
-```
-A[i, j] ≈ G(|x_i − y_j|, k) × area_j     (centroid collocation, current prototype)
-```
-
-This is a weak-singular operator: the kernel `G(r,k) = exp(ikr)/(4πr)` has
-an integrable `O(1/r)` singularity at `r → 0`.
-
-For a physically correct discretization, the operator also includes the
-jump term:
-
-```
-A_full[i, j] = (1/2) δ_{ij} + D'[i, j]
-```
-
-where `D'` is the discrete adjoint double-layer operator.
-
-In the current BEM-003/004C prototype, the jump term `(1/2)δ_{ij}` and the
-`D'` operator are absent from the assembled matrix. The regularization
-epsilon in BEM-004C partially compensates but does not represent these terms
-physically. Correcting this is the work of BEM-007B/007C.
-
-**The operator does not use the normal derivative of G in its current form.**
-The double-layer kernel `∂G/∂n` is required for `D'` and must be added in
-a future bounded milestone.
-
----
+At a panel-centroid target x, the exterior rigid-wall equation uses
+A = K′ − I/2. Each K′ entry integrates n(x) · ∇_x G over a source triangle.
+The right-hand side is −n(x) · ∇p_inc. BEM-004C uses a regularized prototype
+matrix. BEM-007C supplies a pointwise reference derivative and exterior jump
+operation. Physical panel integration and assembly remain future work.
 
 ## 4. Observer operator H
 
@@ -129,7 +99,7 @@ Discretized at centroid collocation (BEM-006A):
 H[i_obs, j_panel] = G(|x_obs_i − centroid_j|, k) × area_j
 ```
 
-H uses the same Green function kernel family as the boundary operator S.
+H uses the scalar single-layer kernel.
 No normal-derivative term appears in H for strictly exterior observers
 (the kernel is regular since `|x_obs − y| > 0` for all such points).
 
@@ -156,9 +126,7 @@ compatible with existing BEM-003/006A matrix build loop.
 
 One collocation equation per panel. The collocation point for panel `j` is
 the centroid `c_j = (v_0 + v_1 + v_2) / 3` where `v_0, v_1, v_2` are the
-triangle vertices. This is order-1 quadrature (equivalent to a 1-point
-Gauss rule on the triangle). Future milestones may upgrade to higher-order
-Gauss-point collocation within this same discretization framework.
+triangle vertices. The collocation point fixes the target. Source-panel quadrature order can change independently.
 
 Galerkin discretization is deferred and not authorized for the next
 implementation path.
@@ -188,27 +156,14 @@ authorized.
 
 ## 7. Normal orientation and derivative convention
 
-**Outward normal at source point**
+**Outward body normal at the target**
 
-The outward normal `n̂(y)` points away from the sphere centre (radially
-outward for a convex body). Formally, `n̂(y) · y > 0` for the unit sphere.
-
-For the normal derivative of the Green function:
-
-```
-∂G/∂n(x, y) = ∇_y G(x, y) · n̂(y)
-```
-
-The derivative is taken with respect to the **source point** `y`, not the
-field/observer point `x`. This convention is consistent with:
-
-- **BEM-004A incident field**: `∂p_inc/∂n(x) = i k (d · n̂(x)) p_inc(x)`
-  where `d` is the plane-wave direction — normal derivative at `x` (the
-  boundary point).
-- **BEM-004B RHS**: assembles `−∂p_inc/∂n(x_i)` at each collocation point
-  `x_i` using the outward normal at `x_i`.
-- **BEM-006A H-matrix**: no normal derivative appears (regular exterior
-  kernel); outward normal is not consumed.
+The trace is taken by approaching x from x + ε n(x) for positive ε.
+With r = |x − y|, the target-normal kernel equals
+G(r,k) (ik − 1/r) n(x) · (x − y)/r.
+K′ is the principal-value integral of this kernel. The exterior trace is
+K′σ − σ/2 and the interior trace with the same normal is K′σ + σ/2.
+The incident-field derivative on the right-hand side uses the same target normal.
 
 **Phase convention: `e^{-iωt}` (suppressed)**
 
@@ -238,7 +193,7 @@ Decompose the diagonal integrand as:
 G(r, k) = [G(r, k) − 1/(4π r)] + 1/(4π r)
 ```
 
-The first bracket is smooth at `r = 0` (since `exp(ikr) − 1 = O(r)`) and
+The first bracket has a finite limit at `r = 0` (since `exp(ikr) − 1 = O(r)`) and
 can be integrated numerically with a standard Gauss rule.
 The second term `1/(4πr)` is the static Laplace kernel, whose integral over
 a flat triangle has a known closed form.
@@ -254,17 +209,17 @@ For a source at the centroid `c` of a flat triangle with vertices
 
 where `I_singular` is derived from the semi-analytical formula for the
 Newton potential over a triangle (see Hess & Smith 1967 / Wilton et al. 1984).
-The exact formula must be derived, coded, and verified in BEM-007C before
-use. It is not implemented by this document.
+Any future on-surface pressure evaluator must verify its chosen diagonal rule. It is not implemented by this document.
 
 **What is not used:**
 - Duffy transformation is not selected as the primary strategy for the
   self-panel diagonal. It would require subdividing each panel into sub-panels
   mapped to a reference square, adding implementation complexity without
   a clear accuracy advantage for the weak `O(1/r)` singularity.
-- Solid-angle / jump term (`1/2 σ`) is a separate term from the self-panel
-  quadrature and must be added to the diagonal independently.
-- Double-layer jump rules do not apply to the single-layer diagonal.
+- The single-layer pressure trace is continuous.
+- For a target inside a flat panel, the principal-value K′ self entry is zero:
+  the displacement to every distinct same-panel source is tangent. The
+  exterior Neumann diagonal includes the separate −1/2 jump.
 
 ---
 
@@ -301,11 +256,10 @@ BEM-007B and is not implemented by this document.
 
 **What must be corrected in future milestones:**
 - BEM-004C must be replaced or supplemented by a physical ISL boundary solve
-  that includes the `(1/2)σ` jump term and the `D'σ` adjoint double-layer term.
-- BEM-006A off-diagonal quadrature must be upgraded from centroid (order 1)
-  to 7-point Gauss (degree 5) in BEM-007B.
-- BEM-006A self-panel diagonal must be corrected from zero/centroid to
-  semi-analytical extraction in BEM-007C.
+  that includes the `−(1/2)σ` jump term and the `D'σ` adjoint double-layer term.
+- BEM-007B provides a separated-panel pressure quadrature utility. Future
+  work must integrate the target-normal kernel for the Neumann matrix.
+- Exterior observers lie off the mesh and have no self-panel diagonal.
 
 ---
 
@@ -336,4 +290,4 @@ here.
 
 ## Lineage
 
-BEM-PHASE4-PLAN-002 → **BEM-007A** → BEM-007B (regular quadrature upgrade, pending)
+BEM-PHASE4-PLAN-002 → **BEM-007A** → BEM-007B (regular quadrature) → BEM-007C (Neumann convention fixtures)
