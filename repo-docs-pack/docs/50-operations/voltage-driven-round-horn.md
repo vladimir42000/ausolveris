@@ -44,3 +44,14 @@ Run `PYTHONPATH=src python examples/round_horn_webster_reference.py`. This compa
 | 360 | 7.16 | 0.108 | 0.023 |
 
 Results use 96 axial by 16 radial cells. Doubling both counts from 48 by 8 changes the reported impedance difference by less than 0.10 percentage point at these frequencies. The persistent discrepancy concerns throat loading even where axial levels agree closely. Webster assumes sectionally uniform pressure and the reference represents the outlet as a uniform piston. This check covers four low frequencies and one observer.
+
+## Effect on the 1 V RMS motor
+
+Run `python examples/round_horn_rear_volume_sweep.py --compare-webster` with the pinned kernel and environment above. The reference applies the Webster throat impedance to the same motor through the scalar electrical and mechanical equations. Each model scales its own axial pressure by its predicted diaphragm velocity. Relative phasor differences are 100 times the magnitude of the FEM-to-reference complex ratio minus one (subtraction inside the magnitude).
+
+| Rear load | Peak frequency of electrical impedance magnitude, FEM / Webster (Hz) | Max complex electrical impedance difference (%) | Max complex diaphragm velocity difference (%) | Max absolute axial SPL difference at 1 m (dB) |
+|---|---:|---:|---:|---:|
+| Released | 204 / 204 | 0.1121 | 0.0622 | 0.1051 |
+| Sealed, 10 cm³ | 296 / 296 | 0.1691 | 0.0752 | 0.1062 |
+
+Each maximum covers all 221 frequencies at 1 Hz spacing, using the default 48 × 8 FEM mesh. Agreement of peak frequency is limited by that spacing. The motor sees the acoustic throat impedance multiplied by diaphragm area squared, in series with its mechanical impedance. This explains how a several-percent throat-load difference can have a much smaller effect on this particular motor.
