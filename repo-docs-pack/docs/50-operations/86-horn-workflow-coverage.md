@@ -7,14 +7,14 @@ Each row has equal weight. Stages are 0% for no working implementation in this w
 | Workflow | Stage | Evidence or missing deliverable |
 |---|---:|---|
 | Geometry input and meshing | 25% | Geometry and YAML tools, triangulated sphere. Horn surface import or generation and mesh checks pending. |
-| Exterior 3D acoustics | 50% | Physical dense Neumann solve for a rigid sphere with mesh refinement. Driven radiator pending. |
-| Observer pressure and directivity | 50% | Executable sphere example with complex pressure at configurable exterior positions. Horn polar sweep pending. |
+| Exterior 3D acoustics | 50% | Physical dense Neumann solve for a rigid sphere with mesh refinement. A separate half-space piston benchmark now covers prescribed velocity. |
+| Observer pressure and directivity | 50% | Executable sphere example with complex pressure at configurable exterior positions. Piston polar sweep available. Horn polar sweep pending. |
 | Interior horn and mouth radiation | 0% | Coupled throat, walls, mouth and exterior needed. |
 | Axisymmetric horn analysis | 0% | Profile-based radiation solve needed. |
 | Driver network and acoustic feedback | 0% | Coupling to OS-LEM and a driven 1 V example needed. |
-| End-user acoustic plots and export | 25% | Visualization scaffolds and numerical example output. Horn SPL, polar and impedance workflow pending. |
+| End-user acoustic plots and export | 50% | Runnable piston example exports absolute SPL, complex pressure and relative level to CSV and directivity to PNG. The horn workflow is pending. |
 
-Mean stage score is 150/7 = 21.4%. Zero of seven rows has reached the independently validated horn-example stage. Electronics design, room acoustics, direct sound and other parts of AKABAK are outside this comparison.
+Mean stage score is 175/7 = 25.0%. Zero of seven rows has reached the independently validated horn-example stage. Electronics design, room acoustics, direct sound and other parts of AKABAK are outside this comparison.
 
 ## Numerical evidence
 
@@ -35,4 +35,16 @@ The unit-radius sound-hard sphere receives a 1 Pa plane wave along +x. Microphon
 
 The benchmark solves a single-layer boundary density with the exterior Neumann jump, then integrates pressure at each microphone. Off-diagonal rows include edge- and vertex-adjacent panels. The corrected fixture projects every mesh vertex onto the requested sphere and derives normals from the triangular faces. Its geometry hashes change. Close parallel evaluation is checked separately against the static solid angle of a square.
 
-The next product milestone is prescribed-velocity radiation with a baffled circular piston. Compare on-axis pressure and angular response to the piston reference, then exercise the same source convention on a round horn with a prescribed throat velocity.
+## Prescribed-velocity radiator
+
+A 25.4 mm diameter circular piston centred in an infinite rigid baffle radiates into the front half-space. The example uses 1 m/s peak uniform velocity, a 1 m microphone radius, air density 1.21 kg/m³ and sound speed 343 m/s. The Rayleigh integral uses the same outgoing-wave convention as the exterior sphere benchmark. It supplies an independent half-space source model for future horn work.
+
+```sh
+PYTHONPATH=src python examples/baffled_piston_polar.py --output-dir piston-results
+```
+
+![Level versus angle for a 25.4 mm baffled piston](figures/baffled-piston-directivity.png)
+
+The sweep exports 0° through 89° at 1, 10 and 30 kHz. Tests cover absolute complex on-axis pressure, independent off-axis disk integration in the near field, and signed far-field directivity including the first zero of the Bessel pattern. At 30 kHz the analytical far-field null lies at 33.30°. The finite-distance curve has a dip near that angle. The 1 m response relative to the axis is −3.82 dB at 15°, −21.79 dB at 30° and −17.75 dB at 45°.
+
+The next milestone is a round horn with prescribed throat velocity, rigid walls, and a radiating mouth. Its validation should cover throat pressure divided by volume velocity as well as exterior pressure versus angle.
