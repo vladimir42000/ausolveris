@@ -47,6 +47,19 @@ class DrivenHornTest(unittest.TestCase):
         driven = solve_round_horn(self.profile, 1000, throat_velocity=a.throat_velocity_rms*np.sqrt(2))
         np.testing.assert_allclose(p, driven.exterior_pressure(observers)/np.sqrt(2))
 
+    def test_sealed_volume_adds_acoustic_spring(self):
+        d = self.driver
+        volume = 10e-6
+        for hz in (150, 205, 290):
+            with self.subTest(hz=hz):
+                r = self.solve(self.profile, hz, d, rear_volume_m3=volume)
+                h = r.unit_horn
+                omega = 2*np.pi*hz
+                stiffness = 1/d.Cms + d.Sd**2*h.density*h.sound_speed**2/volume
+                zm = d.Rms + 1j*(stiffness/omega - omega*d.Mms)
+                expected = d.Re - 1j*omega*d.Le + d.Bl**2/(zm + d.Sd**2*h.throat_impedance)
+                np.testing.assert_allclose(r.electrical_impedance, expected)
+
     def test_area_mismatch(self):
         with self.assertRaisesRegex(ValueError, "area"):
             self.solve(self.profile, 1000, replace(self.driver, Sd=self.driver.Sd*2))

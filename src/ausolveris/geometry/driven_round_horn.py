@@ -1,4 +1,4 @@
-"""Direct piston-to-throat coupling with a pressure-release rear port."""
+"""Direct piston-to-throat coupling with an open or lumped sealed rear volume."""
 from dataclasses import dataclass
 
 import numpy as np
@@ -21,8 +21,10 @@ class DrivenRoundHorn:
         return self.unit_horn.exterior_pressure(observers_m) * self.throat_velocity_rms
 
 
-def solve_driven_round_horn(profile, frequency_hz, driver: Driver, **mesh):
-    """Solve a direct area-matched piston and lossless horn at driver.source_voltage_rms."""
+def solve_driven_round_horn(profile, frequency_hz, driver: Driver, *, rear_volume_m3=None, **mesh):
+    """Solve at the RMS drive voltage. None sets rear pressure to zero."""
+    if rear_volume_m3 is not None and (not np.isfinite(rear_volume_m3) or rear_volume_m3 <= 0):
+        raise ValueError("Expected positive finite rear volume in cubic metres")
     parameters = (driver.Re, driver.Bl, driver.Mms, driver.Cms, driver.Rms,
                   driver.Sd, driver.source_voltage_rms)
     if any(not np.isfinite(x) or x <= 0 for x in parameters):
@@ -39,8 +41,11 @@ def solve_driven_round_horn(profile, frequency_hz, driver: Driver, **mesh):
     system = assemble_system(model)
     coupled = build_coupled_system(model, system, frequency_hz)
     # OS-LEM uses exp(+i omega t). Set p_front = Z_horn * Sd * velocity
-    # and p_rear = 0, preserving the kernel's electrical and mechanical rows.
+    # and p_rear = -Z_rear * Sd * velocity, preserving the kernel's electrical and mechanical rows.
     coupled.A[0] = [1, 0, 0, -horn.throat_impedance.conjugate() * driver.Sd]
     coupled.A[1] = [0, 1, 0, 0]
+    if rear_volume_m3 is not None:
+        compliance = rear_volume_m3 / (horn.density * horn.sound_speed**2)
+        coupled.A[1, 3] = driver.Sd / (2j * np.pi * frequency_hz * compliance)
     _, _, current, velocity = np.linalg.solve(coupled.A, coupled.b).conj()
     return DrivenRoundHorn(horn, current, velocity, driver.source_voltage_rms / current)
