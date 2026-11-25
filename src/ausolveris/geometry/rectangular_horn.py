@@ -6,7 +6,20 @@ from scipy.linalg import solve
 from scipy.sparse import bmat, coo_matrix, csr_matrix
 from scipy.sparse.linalg import spsolve
 
-from .rectangular_duct import RectangularDuct, _patch_load
+from .rectangular_duct import RectangularDuct, _patch_offsets
+
+
+def _quarter_load(nx, ny, dx, dy, k):
+    """Fold four source quadrants onto one set of receiving patches."""
+    offsets = _patch_offsets(2*nx, 2*ny, dx, dy, k)
+    y, x = np.indices((ny, nx)).reshape(2, -1)
+    direct_x, direct_y = np.abs(x[:, None]-x), np.abs(y[:, None]-y)
+    image_x, image_y = x[:, None]+x+1, y[:, None]+y+1
+    load = offsets[direct_y, direct_x]
+    load += offsets[direct_y, image_x]
+    load += offsets[image_y, direct_x]
+    load += offsets[image_y, image_x]
+    return load
 
 
 def _brick_rule(axial_order):
@@ -109,11 +122,7 @@ def solve_rectangular_horn(throat_m, mouth_m, length_m, frequency_hz, *,
                           (np.repeat(np.arange(patch_count), 4), faces.ravel())),
                          shape=(patch_count, ids.size)).tocsr()
     area = mouth.prod()/(4*patch_count)
-    full_load = _patch_load(2*nx, 2*ny, mouth[0]/(2*nx), mouth[1]/(2*ny), k)
-    mirrors = full_load.reshape(2*ny, 2*nx, 2*ny, 2*nx)[ny:, nx:]
-    load = (mirrors[:, :, ny:, nx:] + mirrors[:, :, ny:, nx-1::-1]
-            + mirrors[:, :, ny-1::-1, nx:] + mirrors[:, :, ny-1::-1, nx-1::-1])
-    load = load.reshape(patch_count, patch_count)
+    load = _quarter_load(nx, ny, mouth[0]/(2*nx), mouth[1]/(2*ny), k)
     inlet = elements[:patch_count, :4].ravel()
     weights = np.bincount(inlet, minlength=ids.size)/(4*patch_count)
     if layered:

@@ -54,3 +54,18 @@ def test_layered_elimination_matches_full_complex_solve():
             layered = solve_rectangular_horn(*args, cells=(5, 3, nz), axial_order=order, layered=True)
             np.testing.assert_allclose(layered.throat_impedance, direct.throat_impedance, rtol=1e-9)
             np.testing.assert_allclose(layered.mouth_velocity_m_s, direct.mouth_velocity_m_s, rtol=1e-9)
+
+
+def test_quarter_load_matches_full_aperture_with_reflected_velocity():
+    from ausolveris.geometry.rectangular_horn import _quarter_load
+    from ausolveris.geometry.rectangular_duct import _patch_load
+
+    for nx, ny in [(1, 3), (4, 2)]:
+        dx, dy, k = .003, .005, 550.
+        v = np.exp(1j*np.arange(nx*ny)).reshape(ny, nx)
+        half = np.concatenate((v[:, ::-1], v), axis=1)
+        full = np.concatenate((half[::-1], half))
+        expected = _patch_load(2*nx, 2*ny, dx, dy, k) @ full.ravel()
+        actual = _quarter_load(nx, ny, dx, dy, k) @ v.ravel()
+        np.testing.assert_allclose(actual.reshape(ny, nx),
+                                   expected.reshape(2*ny, 2*nx)[ny:, nx:], rtol=1e-13)

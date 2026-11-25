@@ -9,7 +9,7 @@ from .baffled_piston import _unit_rule
 from .rectangular_piston import rectangular_piston_pressure
 
 
-def _patch_load(nx, ny, dx, dy, k):
+def _patch_offsets(nx, ny, dx, dy, k):
     """Area-averaged Rayleigh impedance / (rho*c) for equal rectangular patches."""
     nodes, weights = _unit_rule(max(16, int(np.ceil(k*max(dx, dy))) + 8))
     u, v = nodes[:, None], nodes[None, :]
@@ -26,6 +26,11 @@ def _patch_load(nx, ny, dx, dy, k):
                     r = np.hypot(dx*(i + sx*a), dy*(j + sy*b))
                     integral += np.sum(jacobian*(1-a)*(1-b)*np.exp(1j*k*r)/r)
         offsets[j, i] = -1j*k*integral/(2*np.pi)
+    return offsets
+
+
+def _patch_load(nx, ny, dx, dy, k):
+    offsets = _patch_offsets(nx, ny, dx, dy, k)
     y, x = np.indices((ny, nx)).reshape(2, -1)
     return offsets[np.abs(y[:, None]-y), np.abs(x[:, None]-x)]
 

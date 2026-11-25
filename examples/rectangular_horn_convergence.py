@@ -9,11 +9,11 @@ from os_lem.model import Driver
 from ausolveris.geometry.driven_round_horn import solve_driven_rectangular_horn
 
 
-def fixture():
+def fixture(angle_step=5):
     throat, mouth = (.025, .020), (.120, .060)
     driver = Driver("illustrative", 6., .0001, 4., .002, .0003, 1.,
                     np.prod(throat), "front", "rear", 1.)
-    theta = np.deg2rad(np.arange(0, 90, 5))
+    theta = np.deg2rad(np.arange(0, 86, angle_step))
     s, c = np.sin(theta), np.cos(theta)
     zero = np.zeros_like(s)
     points = np.vstack((np.column_stack((s, zero, c)), np.column_stack((zero, s, c))))
@@ -22,12 +22,28 @@ def fixture():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--directional", action="store_true",
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--directional", action="store_true",
                         help="compare axial and transverse refinements at 30 kHz")
+    modes.add_argument("--cross-section", action="store_true",
+                       help="vary width and height separately with 128 axial elements at 30 kHz")
     parser.add_argument("--axial-order", type=int, choices=(1, 2), default=1)
+    parser.add_argument('--angle-step', type=int, choices=(1, 5), default=5,
+                        help='sample the same 0 to 85 degree arc in each plane')
     args = parser.parse_args()
-    throat, mouth, driver, points = fixture()
+    throat, mouth, driver, points = fixture(args.angle_step)
     writer = csv.writer(sys.stdout)
+    if args.cross_section:
+        pairs = []
+        for coarse, fine in [((24, 12, 128), (32, 16, 128)), ((32, 16, 128), (40, 20, 128))]:
+            width = (fine[0], coarse[1], coarse[2])
+            height = (coarse[0], fine[1], coarse[2])
+            pairs.extend([(coarse, width, "width"), (coarse, height, "height"),
+                          (height, fine, "width"), (width, fine, "height"),
+                          (coarse, fine, "combined")])
+        pairs.append(((40, 20, 128), (40, 24, 128), "height"))
+        compare_pairs(writer, throat, mouth, driver, points, args.axial_order, pairs)
+        return
     if args.directional:
         directional_study(writer, throat, mouth, driver, points, args.axial_order)
         return
@@ -60,6 +76,10 @@ def directional_study(writer, throat, mouth, driver, points, axial_order):
     if axial_order == 2:
         pairs.insert(0, ((12, 6, 36), levels[0], "axial"))
         pairs.append((levels[-1], (32, 16, 128), "combined"))
+    compare_pairs(writer, throat, mouth, driver, points, axial_order, pairs)
+
+
+def compare_pairs(writer, throat, mouth, driver, points, axial_order, pairs):
     fields = {}
     writer.writerow(["from_grid", "to_grid", "refinement", "axis_dB_SPL",
                      "horizontal_complex_change_pct", "vertical_complex_change_pct",

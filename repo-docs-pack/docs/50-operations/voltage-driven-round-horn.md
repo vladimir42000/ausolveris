@@ -118,3 +118,17 @@ The first and third comparisons use identical nodal plane counts (73 → 97). Fo
 The final combined quadratic refinement, 24 × 12 × 96 → 32 × 16 × 128, changes the horizontal and vertical complex cuts by 1.58% and 3.68%. On-axis SPL at 1 m changes from 56.237 to 56.127 dB. After normalizing each magnitude pattern by its own axial magnitude, the L2 changes are 1.52% and 2.28%. The vertical cut still has appreciable transverse sensitivity. The finite set of angles and mesh comparisons does not establish pointwise accuracy near nulls or agreement with measured hardware.
 
 The directional runs use layer-by-layer Schur elimination of the real interior. This allowed the largest quadratic case to complete after the full complex sparse factorization exceeded available memory. On the 30 shared refinement pairs (15 per order) the full and layered algorithms reproduce the tabulated changes and levels to well within the printed precision. The suite with OS-LEM at 9489f19 passes 480 tests.
+
+## Width and height refinement at 30 kHz
+
+Run the following from the repository root with the same pinned OS-LEM kernel. The axial mesh stays at 128 quadratic elements. The cross-section study varies each transverse count independently and repeats both changes together. Width and height counts refer to one quadrant. The example compares complex pressures and on-axis-normalized magnitude patterns on the same 1 m arc, from 0° to 85° inclusive.
+
+```sh
+OPENBLAS_NUM_THREADS=1 PYTHONPATH=src python examples/rectangular_horn_convergence.py --cross-section --axial-order 2 --angle-step 1
+```
+
+The symmetric outlet uses the four possible direct and reflected patch offsets to assemble its quarter-domain load. This avoids allocating the full four-quadrant dense matrix. A regression compares the resulting pressure with a full-aperture calculation for a nonuniform complex velocity. Distant microphones observing a small rectangular patch use batched finite-distance quadrature with two quadrature orders. A separate double integral checks the complex pressure.
+
+At 32 × 16 × 128, increasing width alone to 40 cells changes the vertical complex cut by 0.61%. Increasing height alone to 20 cells changes it by 2.46%, with width fixed at 32. On the 1° angular grid, the combined refinement to 40 × 20 × 128 gives 0.61% horizontal and 2.49% vertical change. Sampling these cuts every 5° yields 0.62% and 2.28%. These are relative L2 changes across each cut. Pointwise errors at narrow nulls and independent full-horn validation remain open.
+
+At fixed width 40, the extra height refinement from 20 to 24 gives 0.16% horizontal and 1.63% vertical complex change at 1° sampling. The normalized vertical magnitude changes by 1.16%. The resulting on-axis level is 56.061 dB SPL. The full set of comparisons is in [the mesh study CSV](rectangular-horn-30khz-cross-section.csv).
