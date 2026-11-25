@@ -76,3 +76,19 @@ for hz in (1000, 3000):
 ```
 
 At 1 and 3 kHz this yields 87.530 and 87.710 dB respectively. Changing the grid from 8 × 4 × 48 to 12 × 6 × 72 changes these levels by 0.036 and 0.003 dB. Local edge velocities depend more strongly on grid resolution. Tests cover the mean duct transfer, an independent hemispherical radiation-power integral and the motor power balance. A flared transition, high-frequency mesh study and external horn reference remain open.
+
+## Linearly flared rectangular horn
+
+Run `python examples/rectangular_horn_convergence.py` with the pinned kernel. The example linearly expands a 25 × 20 mm throat to a 120 × 60 mm mouth over 120 mm. The rigid, symmetric interior uses trilinear hexahedral pressure elements in a quarter domain. The four mirrored outlet quadrants interact through the full baffled Rayleigh load. The illustrative motor covers the throat and receives 1 V RMS with released rear pressure.
+
+The two principal cuts sample 0–85° every 5° at 1 m. Each percentage is the L2 norm of the change in complex pressure relative to the finer cut, including amplitude and phase. Transverse counts refer to the quarter mesh. The final refinement goes from 12 × 6 × 72 to 16 × 8 × 96.
+
+| kHz | Horizontal change (%) | Vertical change (%) |
+|---:|---:|---:|
+| 1 | 0.052 | 0.049 |
+| 3 | 0.127 | 0.115 |
+| 6 | 1.033 | 1.136 |
+| 12 | 7.905 | 7.926 |
+| 30 | 90.534 | 87.025 |
+
+The two finest grids agree closely at the sampled 1 and 3 kHz points. At 30 kHz the polar predictions remain unresolved. These changes measure mesh sensitivity; independent horn validation remains open.

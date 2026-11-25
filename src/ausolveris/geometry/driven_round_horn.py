@@ -7,6 +7,7 @@ from os_lem.model import Driver, NormalizedModel
 from os_lem.solve import build_coupled_system
 
 from .rectangular_duct import RectangularDuct, solve_rectangular_duct
+from .rectangular_horn import solve_rectangular_horn
 from .round_horn import RoundHornResult, solve_round_horn
 
 
@@ -32,6 +33,12 @@ def solve_driven_rectangular_duct(width_m, height_m, length_m, frequency_hz, dri
                                   *, rear_volume_m3=None, **mesh):
     duct = solve_rectangular_duct(width_m, height_m, length_m, frequency_hz, **mesh)
     return _drive(duct, frequency_hz, driver, width_m*height_m, rear_volume_m3)
+
+
+def solve_driven_rectangular_horn(throat_m, mouth_m, length_m, frequency_hz, driver: Driver,
+                                  *, rear_volume_m3=None, **mesh):
+    horn = solve_rectangular_horn(throat_m, mouth_m, length_m, frequency_hz, **mesh)
+    return _drive(horn, frequency_hz, driver, np.prod(throat_m), rear_volume_m3)
 
 
 def _drive(horn, frequency_hz, driver, inlet_area, rear_volume_m3):
