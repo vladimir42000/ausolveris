@@ -1,0 +1,12 @@
+{
+  "id": "illustrative-piston-12.6cm2",
+  "Re_ohm": 6.0,
+  "Le_mH": 0.10,
+  "Bl_T_m": 4.0,
+  "Mms_g": 2.0,
+  "Cms_mm_per_N": 0.30,
+  "Rms_N_s_per_m": 1.0,
+  "Sd_cm2": 12.6,
+  "front_volume_cm3": 5.0,
+  "rear_volume_litre": 1.0
+}
