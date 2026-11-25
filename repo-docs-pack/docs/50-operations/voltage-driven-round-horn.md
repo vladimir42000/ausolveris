@@ -92,3 +92,29 @@ The two principal cuts sample 0–85° every 5° at 1 m. Each percentage is the 
 | 30 | 90.534 | 87.025 |
 
 The two finest grids agree closely at the sampled 1 and 3 kHz points. At 30 kHz the polar predictions remain unresolved. These changes measure mesh sensitivity; independent horn validation remains open.
+
+## Separating axial and transverse dispersion at 30 kHz
+
+Use the same pinned kernel, drive, microphone positions and rectangular flare as above. Run each command from the repository root with the environment used for the 1 V example.
+
+```sh
+python examples/rectangular_horn_convergence.py --directional --axial-order 1
+python examples/rectangular_horn_convergence.py --directional --axial-order 2
+```
+
+The first two mesh counts cover one transverse quadrant. The third is the number of axial elements. Order 2 adds a midpoint plane to each axial element, leaving the aperture basis and motor coupling unchanged. The default is order 1. Changes below use complex pressure and the finer cut as the L2 denominator.
+
+| Axial order | Quarter mesh, from → to | Change in H / V cuts |
+|---|---|---:|
+| Linear | 12 × 6 × 72 → 12 × 6 × 96 | 90.23% / 87.07% |
+| Linear | 12 × 6 × 96 → 16 × 8 × 96 | 3.34% / 4.56% |
+| Quadratic | 12 × 6 × 36 → 12 × 6 × 48 | 31.10% / 28.60% |
+| Quadratic | 24 × 12 × 80 → 24 × 12 × 96 | 1.18% / 1.08% |
+| Quadratic | 20 × 10 × 96 → 24 × 12 × 96 | 1.11% / 3.36% |
+| Quadratic | 20 × 10 × 80 → 24 × 12 × 96 | 1.72% / 3.45% |
+
+The first and third comparisons use identical nodal plane counts (73 → 97). For an independent propagation check, the straight rectangular duct admits an exact transfer relation between mean mouth pressure, mean mouth velocity and mean inlet pressure. At 30 kHz the relative inlet-pressure residual on a 4 × 3 transverse quadrant was 125.37% for 96 linear elements, 14.91% for 48 quadratic elements and 0.99% for 96 quadratic elements. This test also checks input and aperture power.
+
+The final combined quadratic refinement, 24 × 12 × 96 → 32 × 16 × 128, changes the horizontal and vertical complex cuts by 1.58% and 3.68%. On-axis SPL at 1 m changes from 56.237 to 56.127 dB. After normalizing each magnitude pattern by its own axial magnitude, the L2 changes are 1.52% and 2.28%. The vertical cut still has appreciable transverse sensitivity. The finite set of angles and mesh comparisons does not establish pointwise accuracy near nulls or agreement with measured hardware.
+
+The directional runs use layer-by-layer Schur elimination of the real interior. This allowed the largest quadratic case to complete after the full complex sparse factorization exceeded available memory. On the 30 shared refinement pairs (15 per order) the full and layered algorithms reproduce the tabulated changes and levels to well within the printed precision. The suite with OS-LEM at 9489f19 passes 480 tests.

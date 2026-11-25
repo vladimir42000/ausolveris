@@ -1,4 +1,5 @@
 """Compare complex 1 V pressure on both principal cuts at a 1 m radius."""
+import argparse
 import csv
 import sys
 
@@ -8,7 +9,7 @@ from os_lem.model import Driver
 from ausolveris.geometry.driven_round_horn import solve_driven_rectangular_horn
 
 
-def main():
+def fixture():
     throat, mouth = (.025, .020), (.120, .060)
     driver = Driver("illustrative", 6., .0001, 4., .002, .0003, 1.,
                     np.prod(throat), "front", "rear", 1.)
@@ -16,18 +17,67 @@ def main():
     s, c = np.sin(theta), np.cos(theta)
     zero = np.zeros_like(s)
     points = np.vstack((np.column_stack((s, zero, c)), np.column_stack((zero, s, c))))
+    return throat, mouth, driver, points
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--directional", action="store_true",
+                        help="compare axial and transverse refinements at 30 kHz")
+    parser.add_argument("--axial-order", type=int, choices=(1, 2), default=1)
+    args = parser.parse_args()
+    throat, mouth, driver, points = fixture()
     writer = csv.writer(sys.stdout)
+    if args.directional:
+        directional_study(writer, throat, mouth, driver, points, args.axial_order)
+        return
     writer.writerow(["Hz", "quarter_nx", "quarter_ny", "nz", "axis_dB_SPL",
                      "horizontal_complex_change_pct", "vertical_complex_change_pct"])
     for hz in (1000, 3000, 6000, 12000, 30000):
         previous = None
         for grid in ((4, 2, 24), (6, 3, 36), (8, 4, 48), (12, 6, 72), (16, 8, 96)):
-            r = solve_driven_rectangular_horn(throat, mouth, .12, hz, driver, cells=grid)
+            r = solve_driven_rectangular_horn(throat, mouth, .12, hz, driver, cells=grid,
+                                             axial_order=args.axial_order)
             p = r.exterior_pressure_rms(points).reshape(2, -1)
             changes = ["", ""] if previous is None else (
                 100*np.linalg.norm(p-previous, axis=1)/np.linalg.norm(p, axis=1))
             writer.writerow([hz, *grid, 20*np.log10(abs(p[0, 0])/20e-6), *changes])
             previous = p
+
+
+def directional_study(writer, throat, mouth, driver, points, axial_order):
+    """Reuse each field across comparisons with explicitly named reference grids."""
+    levels = [(12, 6, 72), (16, 8, 96), (24, 12, 144), (32, 16, 192)]
+    if axial_order == 2:
+        levels = [(12, 6, 48), (16, 8, 64), (20, 10, 80), (24, 12, 96)]
+    pairs = []
+    for coarse, fine in zip(levels, levels[1:]):
+        axial = (*coarse[:2], fine[2])
+        transverse = (*fine[:2], coarse[2])
+        pairs.extend([(coarse, axial, "axial"), (coarse, transverse, "transverse"),
+                      (transverse, fine, "axial"), (axial, fine, "transverse"),
+                      (coarse, fine, "combined")])
+    if axial_order == 2:
+        pairs.insert(0, ((12, 6, 36), levels[0], "axial"))
+        pairs.append((levels[-1], (32, 16, 128), "combined"))
+    fields = {}
+    writer.writerow(["from_grid", "to_grid", "refinement", "axis_dB_SPL",
+                     "horizontal_complex_change_pct", "vertical_complex_change_pct",
+                     "horizontal_normalized_magnitude_change_pct",
+                     "vertical_normalized_magnitude_change_pct"])
+    for src, dst, label in pairs:
+        for grid in (src, dst):
+            if grid not in fields:
+                result = solve_driven_rectangular_horn(throat, mouth, .12, 30000, driver,
+                                                       cells=grid, axial_order=axial_order, layered=True)
+                fields[grid] = result.exterior_pressure_rms(points).reshape(2, -1)
+        p, prev = fields[dst], fields[src]
+        delta = 100*np.linalg.norm(p-prev, axis=1)/np.linalg.norm(p, axis=1)
+        mag = abs(p/p[:, :1])
+        prev_mag = abs(prev/prev[:, :1])
+        pattern_delta = 100*np.linalg.norm(mag-prev_mag, axis=1)/np.linalg.norm(mag, axis=1)
+        writer.writerow(["x".join(map(str, src)), "x".join(map(str, dst)), label,
+                         20*np.log10(abs(p[0, 0])/20e-6), *delta, *pattern_delta])
 
 
 if __name__ == "__main__":
