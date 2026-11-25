@@ -6,15 +6,15 @@ Each row has equal weight. Stages are 0% for no working implementation in this w
 
 | Workflow | Stage | Evidence or missing deliverable |
 |---|---:|---|
-| Geometry input and meshing | 25% | Geometry and YAML tools, triangulated sphere. Horn surface import or generation and mesh checks pending. |
-| Exterior 3D acoustics | 50% | Physical dense Neumann solve for a rigid sphere with mesh refinement. A separate half-space piston benchmark now covers prescribed velocity. |
-| Observer pressure and directivity | 50% | Executable sphere example with complex pressure at configurable exterior positions. Piston polar sweep available. Horn polar sweep pending. |
-| Interior horn and mouth radiation | 0% | Coupled throat, walls, mouth and exterior needed. |
-| Axisymmetric horn analysis | 0% | Profile-based radiation solve needed. |
+| Geometry input and meshing | 75% | A sampled axial profile generates the axisymmetric interior mesh. General CAD import is open. |
+| Exterior 3D acoustics | 50% | Sphere benchmark. Horn exterior uses a baffled half-space aperture. General 3D horn radiation is open. |
+| Observer pressure and directivity | 75% | Finite-distance horn polar sweep with radially varying aperture velocity. |
+| Interior horn and mouth radiation | 75% | Rigid-wall FEM interior with a coupled annular radiation load. |
+| Axisymmetric horn analysis | 75% | Runnable conical and exponential profile examples. |
 | Driver network and acoustic feedback | 0% | Coupling to OS-LEM and a driven 1 V example needed. |
-| End-user acoustic plots and export | 50% | Runnable piston example exports absolute SPL, complex pressure and relative level to CSV and directivity to PNG. The horn workflow is pending. |
+| End-user acoustic plots and export | 75% | CSV with impedance, complex pressure and absolute SPL. PNG with directivity and wall pressure. |
 
-Mean stage score is 175/7 = 25.0%. Zero of seven rows has reached the independently validated horn-example stage. Electronics design, room acoustics, direct sound and other parts of AKABAK are outside this comparison.
+Mean stage score is 425/7 = 60.7%. Five rows now have a runnable round-horn example. Zero have reached independent horn validation. Electronics design, room acoustics, direct sound and other parts of AKABAK are outside this comparison.
 
 ## Numerical evidence
 
@@ -47,4 +47,24 @@ PYTHONPATH=src python examples/baffled_piston_polar.py --output-dir piston-resul
 
 The sweep exports 0° through 89° at 1, 10 and 30 kHz. Tests cover absolute complex on-axis pressure, independent off-axis disk integration in the near field, and signed far-field directivity including the first zero of the Bessel pattern. At 30 kHz the analytical far-field null lies at 33.30°. The finite-distance curve has a dip near that angle. The 1 m response relative to the axis is −3.82 dB at 15°, −21.79 dB at 30° and −17.75 dB at 45°.
 
-The next milestone is a round horn with prescribed throat velocity, rigid walls, and a radiating mouth. Its validation should cover throat pressure divided by volume velocity as well as exterior pressure versus angle.
+## Round horn with prescribed throat velocity
+
+From the repository root, install the dependencies and run the comparison.
+
+```sh
+python -m pip install -r requirements.txt
+PYTHONPATH=src python examples/round_horn_comparison.py --output-dir horn-results
+```
+
+Both horns have a 25.4 mm throat diameter, 120 mm mouth diameter and 120 mm length. One radius grows linearly. The other grows exponentially and is sampled at 17 axial stations. The throat moves at 1 m/s peak. The model uses lossless air, rigid walls, and an infinite rigid baffle flush with the mouth. The sparse axisymmetric finite-element solve resolves axial and radial pressure variation. Each annular mouth face exchanges mean pressure and normal velocity with the half-space Rayleigh operator. Impedance is mean throat pressure divided by total inlet volume velocity, with the outgoing wave convention exp(-iωt).
+
+![Comparison of round horn directivity and wall pressure](figures/round-horn-comparison.png)
+
+| Flare at 6 kHz | Throat impedance (kPa s/m³) | On-axis SPL at 1 m | SPL at 30° at 1 m |
+|---|---:|---:|---:|
+| Conical | 809.9 − 134.6i | 114.57 dB | 101.66 dB |
+| Exponential | 793.8 − 61.3i | 113.75 dB | 104.01 dB |
+
+The example exports four frequencies and 45 angles per flare. Doubling nominal axial resolution from 96 to 192 and radial resolution from 16 to 32 at 6 kHz changed complex throat impedance by 1.02% (conical) and 0.70% (exponential). Relative L2 differences in complex microphone pressure were 2.71% and 2.32% respectively, normalized to the finer results. Differences were smaller at the other three frequencies. Tests compare a straight duct against its axial transfer relation, the disk load against the Bessel/Struve mean piston impedance, and inlet power against outlet power. Independent full-horn validation is pending.
+
+The inherited mouth model is limited to ka ≤ 10, about 9.1 kHz for this 60 mm mouth radius. A 30 kHz calculation at this radius needs ka ≈ 33 and additional aperture, interior-mesh and physical-source validation.
