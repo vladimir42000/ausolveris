@@ -55,3 +55,24 @@ Run `python examples/round_horn_rear_volume_sweep.py --compare-webster` with the
 | Sealed, 10 cm³ | 296 / 296 | 0.1691 | 0.0752 | 0.1062 |
 
 Each maximum covers all 221 frequencies at 1 Hz spacing, using the default 48 × 8 FEM mesh. Agreement of peak frequency is limited by that spacing. The motor sees the acoustic throat impedance multiplied by diaphragm area squared, in series with its mechanical impedance. This explains how a several-percent throat-load difference can have a much smaller effect on this particular motor.
+
+## Rectangular straight-duct coupling
+
+The rectangular benchmark uses a 120 × 60 mm constant section, 120 mm length, rigid walls and an infinite flush baffle. The rear pressure is zero. The motor drives the full inlet area at 1 V RMS. The finite-volume interior exchanges patch-averaged pressure and normal velocity with an area-averaged Rayleigh load at the outlet. Each mouth patch contributes its own complex velocity to the microphone pressure.
+
+With the same Python environment as above:
+
+```python
+import numpy as np
+from os_lem.model import Driver
+from ausolveris.geometry.driven_round_horn import solve_driven_rectangular_duct
+
+driver = Driver("illustrative", 6., .0001, 4., .002, .0003, 1.,
+                .12*.06, "front", "rear", 1.)
+for hz in (1000, 3000):
+    r = solve_driven_rectangular_duct(.12, .06, .12, hz, driver, cells=(12, 6, 72))
+    p = r.exterior_pressure_rms([[0., 0., 1.]])[0]
+    print(hz, abs(r.electrical_impedance), 20*np.log10(abs(p)/20e-6))
+```
+
+At 1 and 3 kHz this yields 87.530 and 87.710 dB respectively. Changing the grid from 8 × 4 × 48 to 12 × 6 × 72 changes these levels by 0.036 and 0.003 dB. Local edge velocities depend more strongly on grid resolution. Tests cover the mean duct transfer, an independent hemispherical radiation-power integral and the motor power balance. A flared transition, high-frequency mesh study and external horn reference remain open.

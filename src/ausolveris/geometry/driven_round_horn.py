@@ -6,13 +6,14 @@ from os_lem.assemble import assemble_system
 from os_lem.model import Driver, NormalizedModel
 from os_lem.solve import build_coupled_system
 
+from .rectangular_duct import RectangularDuct, solve_rectangular_duct
 from .round_horn import RoundHornResult, solve_round_horn
 
 
 @dataclass
 class DrivenRoundHorn:
     # RMS quantities use the horn's exp(-i omega t) convention.
-    unit_horn: RoundHornResult
+    unit_horn: RoundHornResult | RectangularDuct
     current_rms: complex
     throat_velocity_rms: complex
     electrical_impedance: complex
@@ -23,6 +24,17 @@ class DrivenRoundHorn:
 
 def solve_driven_round_horn(profile, frequency_hz, driver: Driver, *, rear_volume_m3=None, **mesh):
     """Solve at the RMS drive voltage. None sets rear pressure to zero."""
+    horn = solve_round_horn(profile, frequency_hz, throat_velocity=1., **mesh)
+    return _drive(horn, frequency_hz, driver, np.pi * profile[0][1]**2, rear_volume_m3)
+
+
+def solve_driven_rectangular_duct(width_m, height_m, length_m, frequency_hz, driver: Driver,
+                                  *, rear_volume_m3=None, **mesh):
+    duct = solve_rectangular_duct(width_m, height_m, length_m, frequency_hz, **mesh)
+    return _drive(duct, frequency_hz, driver, width_m*height_m, rear_volume_m3)
+
+
+def _drive(horn, frequency_hz, driver, inlet_area, rear_volume_m3):
     if rear_volume_m3 is not None and (not np.isfinite(rear_volume_m3) or rear_volume_m3 <= 0):
         raise ValueError("Expected positive finite rear volume in cubic metres")
     parameters = (driver.Re, driver.Bl, driver.Mms, driver.Cms, driver.Rms,
@@ -33,8 +45,7 @@ def solve_driven_round_horn(profile, frequency_hz, driver: Driver, *, rear_volum
         raise ValueError("Expected finite nonnegative coil inductance")
     if driver.node_front == driver.node_rear:
         raise ValueError("Expected distinct front and rear nodes")
-    horn = solve_round_horn(profile, frequency_hz, throat_velocity=1., **mesh)
-    if not np.isclose(driver.Sd, np.pi * profile[0][1]**2, rtol=1e-8, atol=0):
+    if not np.isclose(driver.Sd, inlet_area, rtol=1e-8, atol=0):
         raise ValueError("Direct coupling requires diaphragm area equal to throat area")
 
     model = NormalizedModel(driver=driver, node_order=[driver.node_front, driver.node_rear])
