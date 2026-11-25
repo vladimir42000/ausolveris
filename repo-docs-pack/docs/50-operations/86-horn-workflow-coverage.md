@@ -67,4 +67,21 @@ Both horns have a 25.4 mm throat diameter, 120 mm mouth diameter and 120 mm leng
 
 The example exports four frequencies and 45 angles per flare. Doubling nominal axial resolution from 96 to 192 and radial resolution from 16 to 32 at 6 kHz changed complex throat impedance by 1.02% (conical) and 0.70% (exponential). Relative L2 differences in complex microphone pressure were 2.71% and 2.32% respectively, normalized to the finer results. Differences were smaller at the other three frequencies. Tests compare a straight duct against its axial transfer relation, the disk load against the Bessel/Struve mean piston impedance, and inlet power against outlet power. Independent full-horn validation is pending.
 
-The inherited mouth model is limited to ka ≤ 10, about 9.1 kHz for this 60 mm mouth radius. A 30 kHz calculation at this radius needs ka ≈ 33 and additional aperture, interior-mesh and physical-source validation.
+## 30 kHz conical horn development case
+
+Run the prescribed-velocity case and export complex throat impedance and the complex pressure at 45 angles on the 1 m arc.
+
+```sh
+OPENBLAS_NUM_THREADS=1 PYTHONPATH=src python examples/round_horn_ultrasonic.py > horn-30khz.csv
+```
+
+The aperture calculation now covers ka through 33. The 60 mm radius mouth reaches ka = 32.97 at 30 kHz. Tests check off-axis disk pressure by independent surface integration, mean disk impedance against the analytical result, and nonuniform annular radiation power against a hemispherical far-field integral. At this frequency the interior needs substantially finer meshes than the 6 kHz example.
+
+| Axial × radial cells | Change in complex throat impedance | Relative L2 change over the complex polar samples | On-axis SPL at 1 m |
+|---|---:|---:|---:|
+| 192 × 32 | — | — | 118.26 dB |
+| 384 × 64 | 2.84% | 54.06% | 119.85 dB |
+| 576 × 96 | 0.55% | 10.77% | 120.05 dB |
+| 768 × 128 | 0.19% | 3.91% | 120.11 dB |
+
+Changes are relative to the finer result in each successive pair. These are mesh sensitivity estimates for an ideal lossless, rigid, baffled cone with uniform 1 m/s peak throat motion. Individual polar nulls can have larger relative changes. Matched AKABAK or measured validation and the voltage-driven transducer model remain open. The seven-workflow score stays at 60.7%.

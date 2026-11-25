@@ -5,7 +5,10 @@ from functools import lru_cache
 import numpy as np
 
 
-@lru_cache(maxsize=4)
+MAX_APERTURE_KA = 33.0
+
+
+@lru_cache(maxsize=8)
 def _unit_rule(order):
     nodes, weights = np.polynomial.legendre.leggauss(order)
     return (nodes + 1) / 2, weights / 2
@@ -42,7 +45,7 @@ def baffled_piston_pressure(radius_m, frequency_hz, velocity_m_s, observers_m,
     """Return complex peak pressure in Pa for N Cartesian microphone positions.
 
     The disk lies in z=0, centred at the origin. Positive velocity points into
-    z>0. Phasors use exp(-i omega t). This benchmark covers 0 < ka <= 10.
+    z>0. Phasors use exp(-i omega t). This benchmark covers 0 < ka <= 33.
     """
     for value in (radius_m, frequency_hz, density_kg_m3, sound_speed_m_s):
         if not np.isfinite(value) or value <= 0:
@@ -50,8 +53,8 @@ def baffled_piston_pressure(radius_m, frequency_hz, velocity_m_s, observers_m,
     if not np.isfinite(velocity_m_s):
         raise ValueError("Velocity must be finite")
     k = 2 * np.pi * frequency_hz / sound_speed_m_s
-    if k * radius_m > 10:
-        raise ValueError("Piston benchmark supports ka up to 10")
+    if k * radius_m > MAX_APERTURE_KA:
+        raise ValueError(f"Piston benchmark supports ka up to {MAX_APERTURE_KA:g}")
     points = np.asarray(observers_m, dtype=float)
     if points.ndim != 2 or points.shape[1] != 3 or not np.isfinite(points).all():
         raise ValueError("Expected finite N by 3 microphone coordinates")

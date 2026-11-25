@@ -16,11 +16,12 @@ def test_complex_axial_pressure_matches_exact_disk_solution(frequency):
                                rtol=2e-10)
 
 
-def test_near_field_against_independent_source_centred_surface_integration():
-    a, f = 0.0127, 30000
-    nodes, weights = np.polynomial.legendre.leggauss(48)
+@pytest.mark.parametrize("a", [0.0127, 0.060])
+def test_near_field_against_independent_source_centred_surface_integration(a):
+    f = 30000
+    nodes, weights = np.polynomial.legendre.leggauss(128)
     radial = a * (nodes[:, None] + 1) / 2
-    phi = 2 * np.pi * np.arange(256) / 256
+    phi = 2 * np.pi * np.arange(1024) / 1024
     x, y = radial * np.cos(phi), radial * np.sin(phi)
     k = 2 * np.pi * f / 343
     points = np.array([(0.004, 0, 0.005), (0, a, 0.003), (0.021, -0.003, 0.004)])
@@ -42,7 +43,7 @@ def test_30khz_far_field_including_first_null_and_reversed_phase():
     np.testing.assert_allclose(p / p[0], expected, atol=1e-4, rtol=0)
 
 
-@pytest.mark.parametrize("frequency, z", [(0, 1), (50000, 1), (1000, -1)])
+@pytest.mark.parametrize("frequency, z", [(0, 1), (150000, 1), (1000, -1)])
 def test_rejects_out_of_domain_inputs(frequency, z):
     with pytest.raises(ValueError):
         baffled_piston_pressure(0.0127, frequency, 1, [(0, 0, z)])

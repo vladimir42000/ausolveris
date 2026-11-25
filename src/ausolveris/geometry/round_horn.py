@@ -5,7 +5,7 @@ import numpy as np
 from scipy.sparse import bmat, coo_matrix, csr_matrix
 from scipy.sparse.linalg import spsolve
 
-from .baffled_piston import _angular_mean, _unit_rule, baffled_piston_pressure
+from .baffled_piston import MAX_APERTURE_KA, _angular_mean, _unit_rule, baffled_piston_pressure
 
 
 def _port_weights(edges):
@@ -17,7 +17,7 @@ def _port_weights(edges):
 def _mouth_load(edges, k):
     # Mean pressure on each receiver ring for unit velocity on each source
     # ring, normalized by rho*c. Differences of nested disks give annuli.
-    nodes, weights = _unit_rule(8)
+    nodes, weights = _unit_rule(max(8, int(np.ceil(k * np.max(np.diff(edges)))) + 4))
     load = np.empty((len(edges)-1, len(edges)-1), dtype=complex)
     for row, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
         r = lo + (hi-lo)*nodes
@@ -78,7 +78,7 @@ def solve_round_horn(profile, frequency_hz, throat_velocity=1., *, axial_cells=4
 
     Velocity points from throat to mouth. Peak phasors use exp(-i omega t).
     The mouth is flush with an infinite baffle. The caller must check mesh
-    convergence. The outlet pressure evaluator supports mouth ka <= 10.
+    convergence. The outlet pressure evaluator supports mouth ka <= 33.
     """
     profile = np.asarray(profile, dtype=float)
     if (profile.ndim != 2 or profile.shape[1] != 2 or len(profile) < 2
@@ -92,8 +92,8 @@ def solve_round_horn(profile, frequency_hz, throat_velocity=1., *, axial_cells=4
     if not np.isfinite(throat_velocity) or throat_velocity == 0:
         raise ValueError("Expected a finite nonzero throat velocity")
     k = 2*np.pi*frequency_hz/sound_speed
-    if k*profile[-1, 1] > 10:
-        raise ValueError("Mouth load supports ka up to 10")
+    if k*profile[-1, 1] > MAX_APERTURE_KA:
+        raise ValueError(f"Mouth load supports ka up to {MAX_APERTURE_KA:g}")
     knots = profile[:, 0]
     lengths = np.diff(knots)
     counts = np.ceil(axial_cells*lengths/lengths.sum()).astype(int)
