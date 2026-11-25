@@ -31,3 +31,16 @@ Three new unittest cases passed with the pinned kernel. Four existing round-horn
 Run `python examples/round_horn_rear_volume_sweep.py` in the same environment for a 140–360 Hz sweep in 1 Hz increments on the default 48 × 8 mesh. With the same horn and 1 V RMS motor, the sampled maximum of electrical impedance magnitude occurs at 204 Hz (21.9953 ohm) for released rear pressure and 296 Hz (21.9896 ohm) for a sealed 10 cm³ rear cavity. The cavity is a lumped, lossless compliance, adding mechanical stiffness rho c² Sd² / V. The circuit regression checks the complex impedance at three frequencies with this stiffness added analytically.
 
 The full suite with the pinned kernel passed (472 tests, including the driver coupling checks). Independent full-horn validation against matched AKABAK results or measurements remains open.
+
+## Independent low-frequency model comparison
+
+Run `PYTHONPATH=src python examples/round_horn_webster_reference.py`. This compares the conical FEM with a one-dimensional Webster model integrated from mouth to throat. The reference uses the uniform baffled piston's Bessel–Struve mean mouth impedance and closed-form on-axis pressure at 1 m. Both models prescribe 1 m/s throat velocity, use the same air properties and assume an infinite baffle. The comparison isolates the acoustics from motor and rear-volume effects.
+
+| Hz | Relative complex throat impedance difference (%) | Axial level FEM minus Webster (dB) | Axial phase FEM minus Webster (deg) |
+|---:|---:|---:|---:|
+| 140 | 6.78 | 0.014 | 0.005 |
+| 204 | 6.85 | 0.032 | 0.008 |
+| 296 | 7.00 | 0.070 | 0.015 |
+| 360 | 7.16 | 0.108 | 0.023 |
+
+Results use 96 axial by 16 radial cells. Doubling both counts from 48 by 8 changes the reported impedance difference by less than 0.10 percentage point at these frequencies. The persistent discrepancy concerns throat loading even where axial levels agree closely. Webster assumes sectionally uniform pressure and the reference represents the outlet as a uniform piston. This check covers four low frequencies and one observer.
