@@ -298,10 +298,7 @@ class NonSingularOperatorPrototype:
 
 def _distance(p: tuple, q: tuple) -> float:
     """Euclidean distance between two 3‑D points."""
-    dx = p[0] - q[0]
-    dy = p[1] - q[1]
-    dz = p[2] - q[2]
-    return math.sqrt(dx*dx + dy*dy + dz*dz)
+    return math.dist(p, q)
 
 
 def assemble_non_singular_prototype_operator(

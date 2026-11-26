@@ -223,7 +223,7 @@ def _subdivide_faces(
     level: int
 ) -> Tuple[List[Tuple[float, float, float]], List[Tuple[int, int, int]]]:
     """Subdivide each triangle into 4 by splitting edges, repeated `level` times."""
-    verts = list(vertices)
+    verts = [_normalise(v) for v in vertices]
     tris = list(faces)
     edge_map = {}
 
@@ -233,7 +233,7 @@ def _subdivide_faces(
             return edge_map[key]
         x = tuple((verts[i][k] + verts[j][k]) / 2.0 for k in range(3))
         idx = len(verts)
-        verts.append(x)
+        verts.append(_normalise(x))
         edge_map[key] = idx
         return idx
 
@@ -318,9 +318,8 @@ def build_rigid_sphere_benchmark_fixture(
         v0, v1, v2 = scaled_verts[i0], scaled_verts[i1], scaled_verts[i2]
         # centroid
         c = _scale(_add(_add(v0, v1), v2), 1.0/3.0)
-        # outward normal = normalised vector from sphere centre to centroid
-        to_centroid = _subtract(c, center)
-        n = _normalise(to_centroid)
+        # Flat-panel normal follows the outward face winding.
+        n = _normalise(_cross(_subtract(v1, v0), _subtract(v2, v0)))
         area = _area_of_triangle(v0, v1, v2)
         panels.append(RigidSpherePanel(
             vertex_indices=(i0, i1, i2),
